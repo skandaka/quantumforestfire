@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 0 72% 51%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 72% 51%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 72% 51%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(239, 68, 68, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(239, 68, 68, 0.7);
+}
+
+/* Quantum glow effects */
+.quantum-glow {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5),
+              0 0 40px rgba(239, 68, 68, 0.3),
+              0 0 60px rgba(239, 68, 68, 0.1);
+}
+
+.quantum-glow-sm {
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5),
+              0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+/* Fire animation */
+@keyframes fire {
+  0% {
+    text-shadow: 0 0 5px #ff6b6b,
+                 0 0 10px #ff6b6b,
+                 0 0 15px #ff6b6b,
+                 0 0 20px #ff4444,
+                 0 0 35px #ff4444,
+                 0 0 40px #ff4444,
+                 0 0 50px #ff4444,
+                 0 0 75px #ff4444;
+  }
+  50% {
+    text-shadow: 0 0 10px #ff6b6b,
+                 0 0 20px #ff6b6b,
+                 0 0 25px #ff6b6b,
+                 0 0 30px #ff4444,
+                 0 0 45px #ff4444,
+                 0 0 50px #ff4444,
+                 0 0 60px #ff4444,
+                 0 0 85px #ff4444;
+  }
+  100% {
+    text-shadow: 0 0 5px #ff6b6b,
+                 0 0 10px #ff6b6b,
+                 0 0 15px #ff6b6b,
+                 0 0 20px #ff4444,
+                 0 0 35px #ff4444,
+                 0 0 40px #ff4444,
+                 0 0 50px #ff4444,
+                 0 0 75px #ff4444;
+  }
+}
+
+.fire-text {
+  animation: fire 3s ease-in-out infinite;
+}
+
+/* Pulse animation for alerts */
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-red {
+  animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(to right, #ef4444, #f97316, #f59e0b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass morphism */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Loading spinner */
+.spinner {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #ef4444;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Map styles */
+.mapboxgl-popup-content {
+  background: rgba(0, 0, 0, 0.9) !important;
+  color: white !important;
+  border: 1px solid rgba(239, 68, 68, 0.5) !important;
+  border-radius: 8px !important;
+  padding: 12px !important;
+}
+
+.mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
+  border-bottom-color: rgba(0, 0, 0, 0.9) !important;
+}
+
+/* Three.js canvas */
+canvas {
+  touch-action: none;
+}
+
+/* Leva controls customization */
+.leva-c-bDGmTT {
+  background: rgba(0, 0, 0, 0.9) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+}
+
+.leva-c-grzFYX {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Quantum circuit styling */
+.quantum-circuit {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(239, 68, 68, 0.1) 50%,
+    transparent 100%);
+  border-left: 2px solid #ef4444;
+  border-right: 2px solid #ef4444;
+}
