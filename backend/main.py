@@ -14,18 +14,19 @@ from datetime import datetime
 import json
 from typing import Dict, List, Optional
 
-from api import (
+from backend.api import (
     prediction_endpoints,
     validation_endpoints,
     data_endpoints,
     quantum_endpoints,
     classiq_endpoints
 )
-from config import settings
-from data_pipeline.real_time_feeds import RealTimeDataManager
-from quantum_models.quantum_simulator import QuantumSimulatorManager
-from utils.performance_monitor import PerformanceMonitor
-from utils.classiq_utils import ClassiqManager
+from backend.config import settings
+from backend.data_pipeline.real_time_feeds import RealTimeDataManager
+from backend.quantum_models.quantum_simulator import QuantumSimulatorManager
+from backend.utils.performance_monitor import PerformanceMonitor
+from backend.utils.classiq_utils import ClassiqManager
+from backend import managers
 
 # Configure logging
 logging.basicConfig(
@@ -34,38 +35,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global managers
-data_manager: Optional[RealTimeDataManager] = None
-quantum_manager: Optional[QuantumSimulatorManager] = None
-classiq_manager: Optional[ClassiqManager] = None
-performance_monitor: Optional[PerformanceMonitor] = None
-active_websockets: List[WebSocket] = []
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
-    global data_manager, quantum_manager, classiq_manager, performance_monitor
-
     # Startup
     logger.info("🔥 Quantum Fire Prediction System Starting...")
 
     # Initialize managers
     logger.info("📡 Initializing real-time data feeds...")
-    data_manager = RealTimeDataManager()
-    await data_manager.initialize()
+    managers.data_manager = RealTimeDataManager()
+    await managers.data_manager.initialize()
 
     logger.info("🌌 Initializing quantum simulators...")
-    quantum_manager = QuantumSimulatorManager()
-    await quantum_manager.initialize()
+    managers.quantum_manager = QuantumSimulatorManager()
+    await managers.quantum_manager.initialize()
 
     logger.info("🚀 Initializing Classiq integration...")
-    classiq_manager = ClassiqManager(api_key=settings.classiq_api_key)
-    await classiq_manager.initialize()
+    managers.classiq_manager = ClassiqManager(api_key=settings.classiq_api_key)
+    await managers.classiq_manager.initialize()
 
     logger.info("📊 Starting performance monitoring...")
-    performance_monitor = PerformanceMonitor()
-    await performance_monitor.start()
+    managers.performance_monitor = PerformanceMonitor()
+    await managers.performance_monitor.start()
 
     # Start background tasks
     background_tasks = []
@@ -89,17 +81,17 @@ async def lifespan(app: FastAPI):
             pass
 
     # Cleanup
-    if data_manager:
-        await data_manager.shutdown()
-    if quantum_manager:
-        await quantum_manager.shutdown()
-    if classiq_manager:
-        await classiq_manager.shutdown()
-    if performance_monitor:
-        await performance_monitor.stop()
+    if managers.data_manager:
+        await managers.data_manager.shutdown()
+    if managers.quantum_manager:
+        await managers.quantum_manager.shutdown()
+    if managers.classiq_manager:
+        await managers.classiq_manager.shutdown()
+    if managers.performance_monitor:
+        await managers.performance_monitor.stop()
 
     # Close all websockets
-    for ws in active_websockets:
+    for ws in managers.active_websockets:
         await ws.close()
 
     logger.info("🔒 Shutdown complete")
@@ -185,7 +177,7 @@ async def root():
                     "quantum_optimization",
                     "quantum_ml"
                 ],
-                "backends": await quantum_manager.get_available_backends() if quantum_manager else []
+                "backends": await managers.quantum_manager.get_available_backends() if managers.quantum_manager else []
             },
             "predictions": {
                 "accuracy": "94.3%",
@@ -197,7 +189,7 @@ async def root():
                 "noaa_weather": "active",
                 "usgs_terrain": "active"
             },
-            "performance": await performance_monitor.get_metrics() if performance_monitor else {}
+            "performance": await managers.performance_monitor.get_metrics() if managers.performance_monitor else {}
         }
     }
 
@@ -211,15 +203,15 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "components": {
             "api": "operational",
-            "quantum_simulator": "operational" if quantum_manager and quantum_manager.is_healthy() else "degraded",
-            "classiq_integration": "operational" if classiq_manager and classiq_manager.is_connected() else "degraded",
-            "data_pipeline": "operational" if data_manager and data_manager.is_healthy() else "degraded",
-            "performance_monitor": "operational" if performance_monitor else "degraded"
+            "quantum_simulator": "operational" if managers.quantum_manager and managers.quantum_manager.is_healthy() else "degraded",
+            "classiq_integration": "operational" if managers.classiq_manager and managers.classiq_manager.is_connected() else "degraded",
+            "data_pipeline": "operational" if managers.data_manager and managers.data_manager.is_healthy() else "degraded",
+            "performance_monitor": "operational" if managers.performance_monitor else "degraded"
         },
         "metrics": {
-            "uptime_seconds": performance_monitor.get_uptime() if performance_monitor else 0,
-            "total_predictions": performance_monitor.get_total_predictions() if performance_monitor else 0,
-            "active_connections": len(active_websockets)
+            "uptime_seconds": managers.performance_monitor.get_uptime() if managers.performance_monitor else 0,
+            "total_predictions": managers.performance_monitor.get_total_predictions() if managers.performance_monitor else 0,
+            "active_connections": len(managers.active_websockets)
         }
     }
 
@@ -239,7 +231,7 @@ async def health_check():
 async def websocket_endpoint(websocket: WebSocket):
     """Real-time fire prediction updates"""
     await websocket.accept()
-    active_websockets.append(websocket)
+    managers.active_websockets.append(websocket)
 
     try:
         # Send initial connection message
@@ -267,12 +259,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 await handle_subscription(websocket, subscription_type)
 
     except WebSocketDisconnect:
-        active_websockets.remove(websocket)
+        managers.active_websockets.remove(websocket)
         logger.info("WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        if websocket in active_websockets:
-            active_websockets.remove(websocket)
+        if websocket in managers.active_websockets:
+            managers.active_websockets.remove(websocket)
 
 
 async def handle_subscription(websocket: WebSocket, subscription_type: str):
@@ -298,8 +290,8 @@ async def data_collection_loop():
     """Continuously collect data from external sources"""
     while True:
         try:
-            if data_manager:
-                await data_manager.collect_all_data()
+            if managers.data_manager:
+                await managers.data_manager.collect_all_data()
                 logger.info("Data collection cycle completed")
         except Exception as e:
             logger.error(f"Data collection error: {str(e)}")
@@ -311,20 +303,20 @@ async def quantum_prediction_loop():
     """Run quantum predictions periodically"""
     while True:
         try:
-            if quantum_manager and data_manager:
+            if managers.quantum_manager and managers.data_manager:
                 # Get latest data
-                fire_data = await data_manager.get_latest_fire_data()
-                weather_data = await data_manager.get_latest_weather_data()
+                fire_data = await managers.data_manager.get_latest_fire_data()
+                weather_data = await managers.data_manager.get_latest_weather_data()
 
                 if fire_data and weather_data:
                     # Run quantum prediction
-                    prediction = await quantum_manager.run_prediction(
+                    prediction = await managers.quantum_manager.run_prediction(
                         fire_data=fire_data,
                         weather_data=weather_data
                     )
 
                     # Store prediction
-                    await data_manager.store_prediction(prediction)
+                    await managers.data_manager.store_prediction(prediction)
 
                     # Broadcast to websockets
                     await broadcast_prediction(prediction)
@@ -341,9 +333,9 @@ async def websocket_broadcast_loop():
     """Broadcast updates to all connected WebSocket clients"""
     while True:
         try:
-            if active_websockets and performance_monitor:
+            if managers.active_websockets and managers.performance_monitor:
                 # Broadcast performance metrics
-                metrics = await performance_monitor.get_metrics()
+                metrics = await managers.performance_monitor.get_metrics()
                 await broadcast_to_all({
                     "type": "metrics",
                     "data": metrics,
@@ -358,7 +350,7 @@ async def websocket_broadcast_loop():
 async def broadcast_to_all(message: dict):
     """Broadcast message to all connected WebSocket clients"""
     disconnected = []
-    for websocket in active_websockets:
+    for websocket in managers.active_websockets:
         try:
             await websocket.send_json(message)
         except:
@@ -366,8 +358,8 @@ async def broadcast_to_all(message: dict):
 
     # Remove disconnected clients
     for ws in disconnected:
-        if ws in active_websockets:
-            active_websockets.remove(ws)
+        if ws in managers.active_websockets:
+            managers.active_websockets.remove(ws)
 
 
 async def broadcast_prediction(prediction: dict):
@@ -398,17 +390,19 @@ async def api_info():
             "swagger": "/docs",
             "redoc": "/redoc"
         },
-        "statistics": await performance_monitor.get_api_stats() if performance_monitor else {}
+        "statistics": await managers.performance_monitor.get_api_stats() if managers.performance_monitor else {}
     }
 
 
 if __name__ == "__main__":
     # Run with uvicorn
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
         log_level="info",
-        access_log=True
+        access_log=True,
+        # Add the project root to the Python path
+        reload_dirs=["backend"]
     )

@@ -3,6 +3,7 @@ Configuration management for Quantum Fire Prediction System
 Location: backend/config.py
 """
 
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import Optional, List, Dict, Any

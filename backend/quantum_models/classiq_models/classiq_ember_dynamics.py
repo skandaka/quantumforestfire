@@ -180,14 +180,14 @@ class ClassiqEmberDynamics:
         try:
             logger.info(f"Building quantum ember model with {self.num_qubits} qubits")
 
-            # Define the quantum function
+            # Define the quantum function - fix type annotations
             @qfunc
             def ember_transport_model(
-                    initial_positions: QArray[QBit, self.num_qubits],
-                    wind: QArray[QBit, 50],
-                    turbulence: QArray[QBit, 30],
-                    temperature: QArray[QBit, 40],
-                    landing_map: Output[QArray[QBit, 100]]
+                    initial_positions: QArray[QBit],
+                    wind: QArray[QBit],
+                    turbulence: QArray[QBit],
+                    temperature: QArray[QBit],
+                    landing_map: Output[QArray[QBit]]
             ):
                 quantum_ember_transport(
                     initial_positions, wind, turbulence, temperature, landing_map
@@ -676,4 +676,3 @@ class ClassiqEmberDynamics:
             'recommended_rendering': 'three.js_particle_system',
             'data_format': 'particle_cloud_with_velocity_vectors'
         }
-

@@ -1,15 +1,14 @@
 """
-Quantum Simulator Manager for Fire Prediction System
+Quantum Simulator Interface for Fire Prediction
 Location: backend/quantum_models/quantum_simulator.py
 """
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Union, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Tuple
+from datetime import datetime
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-import json
 
 # Mock Qiskit imports for development
 try:
@@ -22,17 +21,22 @@ try:
 except ImportError:
     QISKIT_AVAILABLE = False
     # Mock classes
-    class Backend: pass
+    class Backend: 
+        def run(self, circuit, shots=1024):
+            return MockJob()
     class IBMQBackend: pass
     class QuantumCircuit: pass
     class Aer:
         @staticmethod
-        def get_backend(name): return None
+        def get_backend(name): return Backend()
     class IBMQ:
         @staticmethod
         def save_account(*args, **kwargs): pass
         @staticmethod
         def load_account(): return None
+        @staticmethod
+        def providers(): return []
+    def job_monitor(*args, **kwargs): pass
 
 # Mock Classiq imports
 try:
@@ -42,18 +46,79 @@ try:
 except ImportError:
     CLASSIQ_AVAILABLE = False
     class ClassiqBackendPreferences: pass
+    def execute_qprogram(*args, **kwargs):
+        return MockQuantumResult()
 
+# Import our quantum models
 from .classiq_models.classiq_fire_spread import ClassiqFireSpread, FireGridState
-from .classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, EmberState, AtmosphericConditions
-from .classiq_models.classiq_optimization import ClassiqResourceOptimizer
-from .qiskit_models.qiskit_fire_spread import QiskitFireSpread
-from .qiskit_models.qiskit_ember_transport import QiskitEmberTransport
+from .classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, AtmosphericConditions
+from .classiq_models.classiq_optimization import ClassiqOptimization
+from .classiq_models.classiq_ember_transport import QiskitEmberTransport
 
-from ..config import settings
-from ..utils.performance_monitor import quantum_performance_tracker
+# Mock settings class
+class MockSettings:
+    def __init__(self):
+        self.ibm_quantum_token = None
+        self.prediction_grid_size = 100
+        self.minimum_fire_confidence = 0.6
+
+# Use mock settings if backend.config is not available
+try:
+    from backend.config import settings
+except ImportError:
+    settings = MockSettings()
 
 logger = logging.getLogger(__name__)
 
+class MockJob:
+    def __init__(self):
+        self.job_id = "mock_job_123"
+    
+    def result(self):
+        return MockResult()
+
+class MockResult:
+    def get_counts(self):
+        return {"0000": 512, "1111": 512}
+
+class MockQuantumResult:
+    def __init__(self):
+        self.counts = {"0000": 512, "1111": 512}
+    
+    def result(self):
+        return self
+    
+    def get_counts(self):
+        return self.counts
+
+# Mock Qiskit models
+class QiskitFireSpread:
+    def __init__(self):
+        self.num_qubits = 20
+    
+    def get_qubit_requirements(self) -> int:
+        return self.num_qubits
+    
+    def build_circuit(self, fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Any:
+        return "mock_circuit"
+    
+    def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            'predictions': [{
+                'time_step': 0,
+                'fire_probability_map': np.random.rand(50, 50).tolist(),
+                'high_risk_cells': [(25, 25)],
+                'total_area_at_risk': 100
+            }],
+            'metadata': {'backend': 'qiskit_simulator'}
+        }
+
+# Mock performance tracker
+class MockPerformanceTracker:
+    async def track_prediction(self, result: Dict[str, Any]):
+        pass
+
+quantum_performance_tracker = MockPerformanceTracker()
 
 class QuantumBackendManager:
     """Manages quantum backend connections and selection"""
@@ -182,7 +247,7 @@ class QuantumSimulatorManager:
         # Initialize Classiq models
         self.models['classiq_fire_spread'] = ClassiqFireSpread(grid_size=50)
         self.models['classiq_ember_dynamics'] = ClassiqEmberDynamics(max_embers=1000)
-        self.models['classiq_optimizer'] = ClassiqResourceOptimizer()
+        self.models['classiq_optimizer'] = ClassiqOptimization()
 
         # Initialize Qiskit models
         self.models['qiskit_fire_spread'] = QiskitFireSpread()

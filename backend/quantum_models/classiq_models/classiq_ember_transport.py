@@ -4,7 +4,7 @@ Location: backend/quantum_models/qiskit_models/qiskit_ember_transport.py
 """
 
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,8 +26,7 @@ class QiskitEmberTransport:
         logger.info("Building Qiskit ember transport circuit (mock)")
         return "mock_circuit"
 
-    def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[
-        str, Any]:
+    def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process quantum results (mock)"""
         return {
             'landing_probability_map': np.random.rand(self.grid_size, self.grid_size).tolist(),

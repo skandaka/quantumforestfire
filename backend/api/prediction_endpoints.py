@@ -13,11 +13,12 @@ import json
 import asyncio
 from uuid import uuid4
 
-from ..quantum_models.quantum_simulator import QuantumSimulatorManager
-from ..data_pipeline.real_time_feeds import RealTimeDataManager
-from ..utils.performance_monitor import quantum_performance_tracker
-from ..utils.paradise_fire_demo import ParadiseFireDemo
-from ..config import settings
+from backend.quantum_models.quantum_simulator import QuantumSimulatorManager
+from backend.data_pipeline.real_time_feeds import RealTimeDataManager
+from backend.utils.performance_monitor import quantum_performance_tracker
+from backend.utils.paradise_fire_demo import ParadiseFireDemo
+from backend.config import settings
+from backend import managers
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +86,16 @@ class PredictionResponse(BaseModel):
 # Dependencies
 async def get_quantum_manager():
     """Get quantum simulator manager instance"""
-    from ..main import quantum_manager
-    if not quantum_manager:
+    if not managers.quantum_manager:
         raise HTTPException(status_code=503, detail="Quantum system not initialized")
-    return quantum_manager
+    return managers.quantum_manager
 
 
 async def get_data_manager():
     """Get data manager instance"""
-    from ..main import data_manager
-    if not data_manager:
+    if not managers.data_manager:
         raise HTTPException(status_code=503, detail="Data system not initialized")
-    return data_manager
+    return managers.data_manager
 
 
 # Endpoints
