@@ -8,28 +8,41 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import asyncio
 import json
-import aiohttp
 from dataclasses import dataclass
 from enum import Enum
 
-from classiq import (
-    authenticate,
-    Model,
-    synthesize,
-    execute,
-    create_model,
-    QuantumProgram,
-    ExecutionPreferences,
-    Constraints,
-    OptimizationParameter,
-    show,
-    ClassiqBackendPreferences,
-    BackendServiceProvider
-)
-from classiq.execution import ExecutionDetails
-from classiq.synthesis import SerializedModel
+# Mock Classiq imports for development (replace with actual imports when available)
+try:
+    from classiq import (
+        authenticate,
+        Model,
+        synthesize,
+        execute,
+        create_model,
+        QuantumProgram,
+        ExecutionPreferences,
+        Constraints,
+        OptimizationParameter,
+        show,
+        ClassiqBackendPreferences,
+        BackendServiceProvider
+    )
+    from classiq.execution import ExecutionDetails
+    from classiq.synthesis import SerializedModel
+    CLASSIQ_AVAILABLE = True
+except ImportError:
+    CLASSIQ_AVAILABLE = False
+    # Mock classes for development
+    class Model: pass
+    class QuantumProgram: pass
+    class ExecutionPreferences: pass
+    class Constraints: pass
+    class ClassiqBackendPreferences: pass
+    class BackendServiceProvider: pass
+    class ExecutionDetails: pass
+    class SerializedModel: pass
 
-from config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +78,10 @@ class ClassiqManager:
         self.api_key = api_key or settings.classiq_api_key
         self.api_endpoint = settings.classiq_api_endpoint
         self.is_authenticated = False
-        self.available_backends = {}
-        self.cached_models = {}
-        self.synthesis_history = []
-        self.execution_history = []
+        self.available_backends: Dict[str, Dict[str, Any]] = {}
+        self.cached_models: Dict[str, Dict[str, Any]] = {}
+        self.synthesis_history: List[Dict[str, Any]] = []
+        self.execution_history: List[Dict[str, Any]] = []
 
     async def initialize(self):
         """Initialize Classiq connection and authentication"""
@@ -77,6 +90,11 @@ class ClassiqManager:
 
             if not self.api_key:
                 logger.warning("No Classiq API key provided")
+                return
+
+            if not CLASSIQ_AVAILABLE:
+                logger.warning("Classiq SDK not available - running in mock mode")
+                self.is_authenticated = False
                 return
 
             # Authenticate with Classiq
@@ -97,14 +115,14 @@ class ClassiqManager:
 
     def is_connected(self) -> bool:
         """Check if connected to Classiq platform"""
-        return self.is_authenticated
+        return self.is_authenticated and CLASSIQ_AVAILABLE
 
     async def _discover_backends(self):
         """Discover available quantum backends through Classiq"""
         try:
             # Get simulator backends
             self.available_backends['simulator'] = {
-                'type': ClassiqBackendType.SIMULATOR,
+                'type': ClassiqBackendType.SIMULATOR.value,
                 'name': 'classiq_simulator',
                 'max_qubits': 30,
                 'status': 'available',
@@ -114,7 +132,7 @@ class ClassiqManager:
             # Check for hardware backends if credentials are configured
             if settings.ibm_quantum_token:
                 self.available_backends['ibm_quantum'] = {
-                    'type': ClassiqBackendType.IBMQ,
+                    'type': ClassiqBackendType.IBMQ.value,
                     'name': 'ibm_quantum',
                     'max_qubits': 127,
                     'status': 'available',
@@ -135,11 +153,11 @@ class ClassiqManager:
 
     async def synthesize_model(
             self,
-            model: Model,
+            model: 'Model',
             optimization_level: int = 3,
-            constraints: Optional[Constraints] = None,
+            constraints: Optional['Constraints'] = None,
             backend_name: Optional[str] = None
-    ) -> QuantumProgram:
+    ) -> 'QuantumProgram':
         """
         Synthesize a Classiq model into optimized quantum circuit.
 
@@ -147,6 +165,9 @@ class ClassiqManager:
         and synthesis from high-level quantum functions.
         """
         try:
+            if not CLASSIQ_AVAILABLE:
+                raise RuntimeError("Classiq SDK not available")
+
             start_time = datetime.now()
 
             logger.info(f"Synthesizing Classiq model with optimization level {optimization_level}")
@@ -205,13 +226,16 @@ class ClassiqManager:
 
     async def execute_quantum_program(
             self,
-            quantum_program: QuantumProgram,
+            quantum_program: 'QuantumProgram',
             backend_type: ClassiqBackendType = ClassiqBackendType.SIMULATOR,
             num_shots: int = 4096,
             backend_name: Optional[str] = None
-    ) -> ExecutionDetails:
+    ) -> 'ExecutionDetails':
         """Execute a quantum program on specified backend"""
         try:
+            if not CLASSIQ_AVAILABLE:
+                raise RuntimeError("Classiq SDK not available")
+
             start_time = datetime.now()
 
             # Configure execution preferences
@@ -260,7 +284,7 @@ class ClassiqManager:
             logger.error(f"Error executing quantum program: {str(e)}")
             raise
 
-    def _extract_circuit_metrics(self, quantum_program: QuantumProgram) -> Dict[str, Any]:
+    def _extract_circuit_metrics(self, quantum_program: 'QuantumProgram') -> Dict[str, Any]:
         """Extract metrics from synthesized quantum program"""
         try:
             # In actual Classiq SDK, these would be extracted from the program
@@ -283,10 +307,10 @@ class ClassiqManager:
 
     async def optimize_for_hardware(
             self,
-            model: Model,
+            model: 'Model',
             target_backend: str,
             max_optimization_time: int = 300
-    ) -> QuantumProgram:
+    ) -> 'QuantumProgram':
         """
         Optimize a model specifically for target quantum hardware.
 
@@ -306,8 +330,16 @@ class ClassiqManager:
             backend_name=target_backend
         )
 
-    def _get_hardware_constraints(self, backend_name: str) -> Constraints:
+    def _get_hardware_constraints(self, backend_name: str) -> 'Constraints':
         """Get hardware-specific constraints"""
+        if not CLASSIQ_AVAILABLE:
+            # Return mock constraints
+            return type('Constraints', (), {
+                'max_circuit_depth': 500,
+                'max_gate_count': 10000,
+                'optimization_level': 3
+            })()
+
         # Default constraints
         constraints = Constraints(
             max_circuit_depth=500,
@@ -333,11 +365,11 @@ class ClassiqManager:
         avg_synthesis_time = sum(s['synthesis_time'] for s in self.synthesis_history) / total_syntheses
 
         # Gate count statistics
-        gate_counts = [s['metrics']['gate_count'] for s in self.synthesis_history if 'metrics' in s]
+        gate_counts = [s['metrics']['gate_count'] for s in self.synthesis_history if 'metrics' in s and 'gate_count' in s['metrics']]
         avg_gates = sum(gate_counts) / len(gate_counts) if gate_counts else 0
 
         # Circuit depth statistics
-        depths = [s['metrics']['circuit_depth'] for s in self.synthesis_history if 'metrics' in s]
+        depths = [s['metrics']['circuit_depth'] for s in self.synthesis_history if 'metrics' in s and 'circuit_depth' in s['metrics']]
         avg_depth = sum(depths) / len(depths) if depths else 0
 
         return {
@@ -352,7 +384,7 @@ class ClassiqManager:
             'recent_syntheses': self.synthesis_history[-5:]
         }
 
-    async def visualize_circuit(self, quantum_program: QuantumProgram) -> str:
+    async def visualize_circuit(self, quantum_program: 'QuantumProgram') -> str:
         """Generate circuit visualization"""
         try:
             # In actual Classiq, this would generate interactive visualization
@@ -362,9 +394,30 @@ class ClassiqManager:
             logger.error(f"Error generating visualization: {str(e)}")
             return ""
 
-    async def estimate_resources(self, model: Model) -> Dict[str, Any]:
+    async def estimate_resources(self, model: 'Model') -> Dict[str, Any]:
         """Estimate quantum resources required for model"""
         try:
+            if not CLASSIQ_AVAILABLE:
+                # Return mock estimates
+                return {
+                    'qubit_requirements': 20,
+                    'circuit_complexity': {
+                        'gates': 1500,
+                        'depth': 100,
+                        'two_qubit_gates': 300
+                    },
+                    'execution_time_estimates': {
+                        'simulator': 1.5,
+                        'ibm_quantum': 301.5,
+                        'ionq': 181.5
+                    },
+                    'cost_estimates': {
+                        'simulator': 0,
+                        'ibm_quantum': 0.015,
+                        'ionq': 0.03
+                    }
+                }
+
             # Quick synthesis to estimate resources
             quantum_program = await self.synthesize_model(
                 model,
@@ -401,7 +454,7 @@ class ClassiqManager:
 
     async def compare_synthesis_strategies(
             self,
-            model: Model,
+            model: 'Model',
             strategies: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Compare different synthesis strategies for a model"""

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import logging
 import json
 import asyncio
@@ -17,7 +17,7 @@ from ..quantum_models.quantum_simulator import QuantumSimulatorManager
 from ..data_pipeline.real_time_feeds import RealTimeDataManager
 from ..utils.performance_monitor import quantum_performance_tracker
 from ..utils.paradise_fire_demo import ParadiseFireDemo
-from config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +32,15 @@ class LocationPoint(BaseModel):
 
 class FirePredictionRequest(BaseModel):
     location: LocationPoint
-    radius_km: float = Field(50.0, gt=0, le=500)
-    time_horizon_hours: int = Field(24, gt=0, le=72)
-    model_type: str = Field("ensemble",
-                            regex="^(classiq_fire_spread|classiq_ember_dynamics|qiskit_fire_spread|ensemble)$")
-    use_quantum_hardware: bool = Field(False)
-    include_ember_analysis: bool = Field(True)
+    radius_km: float = Field(default=50.0, gt=0, le=500)
+    time_horizon_hours: int = Field(default=24, gt=0, le=72)
+    model_type: str = Field(default="ensemble", pattern="^(classiq_fire_spread|classiq_ember_dynamics|qiskit_fire_spread|ensemble)$")
+    use_quantum_hardware: bool = Field(default=False)
+    include_ember_analysis: bool = Field(default=True)
 
-    @validator('radius_km')
-    def validate_radius(cls, v):
+    @field_validator('radius_km')
+    @classmethod
+    def validate_radius(cls, v: float) -> float:
         if v > 200 and not settings.is_production():
             raise ValueError("Radius > 200km only available in production")
         return v
@@ -48,11 +48,11 @@ class FirePredictionRequest(BaseModel):
 
 class EmberPredictionRequest(BaseModel):
     fire_location: LocationPoint
-    fire_intensity: float = Field(0.8, ge=0, le=1)
-    fire_area_hectares: float = Field(100, gt=0)
-    wind_speed_mph: float = Field(10, ge=0, le=100)
-    wind_direction: float = Field(0, ge=0, le=360)
-    duration_minutes: int = Field(30, gt=0, le=120)
+    fire_intensity: float = Field(default=0.8, ge=0, le=1)
+    fire_area_hectares: float = Field(default=100, gt=0)
+    wind_speed_mph: float = Field(default=10, ge=0, le=100)
+    wind_direction: float = Field(default=0, ge=0, le=360)
+    duration_minutes: int = Field(default=30, gt=0, le=120)
 
 
 class AreaPredictionRequest(BaseModel):
@@ -60,12 +60,13 @@ class AreaPredictionRequest(BaseModel):
     south: float = Field(..., ge=-90, le=90)
     east: float = Field(..., ge=-180, le=180)
     west: float = Field(..., ge=-180, le=180)
-    grid_resolution_km: float = Field(1.0, gt=0, le=10)
-    time_horizon_hours: int = Field(24, gt=0, le=48)
+    grid_resolution_km: float = Field(default=1.0, gt=0, le=10)
+    time_horizon_hours: int = Field(default=24, gt=0, le=48)
 
-    @validator('north')
-    def validate_bounds(cls, v, values):
-        if 'south' in values and v <= values['south']:
+    @field_validator('north')
+    @classmethod
+    def validate_bounds(cls, v: float, values: Dict[str, Any]) -> float:
+        if 'south' in values.data and v <= values.data['south']:
             raise ValueError("North must be greater than south")
         return v
 
@@ -77,7 +78,7 @@ class PredictionResponse(BaseModel):
     location: Dict[str, float]
     predictions: List[Dict[str, Any]]
     metadata: Dict[str, Any]
-    quantum_metrics: Optional[Dict[str, Any]]
+    quantum_metrics: Optional[Dict[str, Any]] = None
     warnings: List[str] = []
 
 
@@ -396,7 +397,8 @@ async def run_paradise_demo(
 
 @router.get("/predict/stream")
 async def stream_predictions(
-        location: LocationPoint = Query(...),
+        latitude: float = Query(..., ge=-90, le=90),
+        longitude: float = Query(..., ge=-180, le=180),
         data_manager: RealTimeDataManager = Depends(get_data_manager)
 ):
     """
@@ -416,8 +418,8 @@ async def stream_predictions(
                 pred_location = prediction.get('data', {}).get('location', {})
                 if pred_location:
                     # Simple distance check
-                    lat_diff = abs(pred_location.get('latitude', 0) - location.latitude)
-                    lon_diff = abs(pred_location.get('longitude', 0) - location.longitude)
+                    lat_diff = abs(pred_location.get('latitude', 0) - latitude)
+                    lon_diff = abs(pred_location.get('longitude', 0) - longitude)
 
                     if lat_diff < 1 and lon_diff < 1:  # Within ~100km
                         yield f"data: {json.dumps(prediction)}\n\n"
@@ -442,7 +444,7 @@ async def validate_prediction_request(request: FirePredictionRequest):
         # Validation is done by Pydantic
         return {
             "valid": True,
-            "request": request.dict(),
+            "request": request.model_dump(),
             "estimated_execution_time": 30 if request.use_quantum_hardware else 5,
             "estimated_cost": 0.10 if request.use_quantum_hardware else 0.01
         }

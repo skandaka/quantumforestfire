@@ -12,7 +12,7 @@ import asyncio
 import logging
 from datetime import datetime
 import json
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from api import (
     prediction_endpoints,
@@ -35,10 +35,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global managers
-data_manager: RealTimeDataManager = None
-quantum_manager: QuantumSimulatorManager = None
-classiq_manager: ClassiqManager = None
-performance_monitor: PerformanceMonitor = None
+data_manager: Optional[RealTimeDataManager] = None
+quantum_manager: Optional[QuantumSimulatorManager] = None
+classiq_manager: Optional[ClassiqManager] = None
+performance_monitor: Optional[PerformanceMonitor] = None
 active_websockets: List[WebSocket] = []
 
 
@@ -68,9 +68,10 @@ async def lifespan(app: FastAPI):
     await performance_monitor.start()
 
     # Start background tasks
-    asyncio.create_task(data_collection_loop())
-    asyncio.create_task(quantum_prediction_loop())
-    asyncio.create_task(websocket_broadcast_loop())
+    background_tasks = []
+    background_tasks.append(asyncio.create_task(data_collection_loop()))
+    background_tasks.append(asyncio.create_task(quantum_prediction_loop()))
+    background_tasks.append(asyncio.create_task(websocket_broadcast_loop()))
 
     logger.info("✅ All systems initialized successfully!")
 
@@ -79,11 +80,23 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("👋 Shutting down Quantum Fire Prediction System...")
 
+    # Cancel background tasks
+    for task in background_tasks:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     # Cleanup
-    await data_manager.shutdown()
-    await quantum_manager.shutdown()
-    await classiq_manager.shutdown()
-    await performance_monitor.stop()
+    if data_manager:
+        await data_manager.shutdown()
+    if quantum_manager:
+        await quantum_manager.shutdown()
+    if classiq_manager:
+        await classiq_manager.shutdown()
+    if performance_monitor:
+        await performance_monitor.stop()
 
     # Close all websockets
     for ws in active_websockets:

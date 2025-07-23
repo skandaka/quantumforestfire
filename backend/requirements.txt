@@ -2,13 +2,12 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
-pydantic==2.4.2
-pydantic-settings==2.0.3
+pydantic>=2.9.0,<2.10.0
+pydantic-settings>=2.0.3
 
 # Quantum Computing
-qiskit==0.45.0
 qiskit-ibm-runtime==0.15.0
-classiq==0.36.0
+classiq>=0.47.0
 numpy==1.26.2
 scipy==1.11.4
 
@@ -46,7 +45,7 @@ python-dateutil==2.8.2
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
-black==23.11.0
+black>=24.0
 flake8==6.1.0
 mypy==1.7.1
 ipython==8.18.1

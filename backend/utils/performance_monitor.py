@@ -13,9 +13,9 @@ from collections import defaultdict, deque
 import json
 import numpy as np
 from prometheus_client import Counter, Histogram, Gauge, Summary
-import aioredis
+import redis.asyncio as redis
 
-from config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +36,14 @@ class PerformanceMonitor:
     """Comprehensive performance monitoring for the quantum fire prediction system"""
 
     def __init__(self):
-        self.start_time = None
-        self.metrics = defaultdict(lambda: deque(maxlen=1000))
-        self.prediction_history = deque(maxlen=100)
-        self.quantum_metrics = defaultdict(dict)
-        self.api_metrics = defaultdict(lambda: {'count': 0, 'total_time': 0})
-        self.redis_client = None
-        self._monitoring_task = None
-        self._export_task = None
+        self.start_time: Optional[datetime] = None
+        self.metrics: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.prediction_history: deque = deque(maxlen=100)
+        self.quantum_metrics: Dict[str, Dict] = defaultdict(dict)
+        self.api_metrics: Dict[str, Dict[str, float]] = defaultdict(lambda: {'count': 0, 'total_time': 0})
+        self.redis_client: Optional[redis.Redis] = None
+        self._monitoring_task: Optional[asyncio.Task] = None
+        self._export_task: Optional[asyncio.Task] = None
 
     async def start(self):
         """Start performance monitoring"""
@@ -53,7 +53,7 @@ class PerformanceMonitor:
 
         # Initialize Redis for metrics storage
         if settings.redis_url:
-            self.redis_client = await aioredis.from_url(
+            self.redis_client = await redis.from_url(
                 settings.redis_url,
                 password=settings.redis_password,
                 decode_responses=True
@@ -72,8 +72,17 @@ class PerformanceMonitor:
         # Cancel tasks
         if self._monitoring_task:
             self._monitoring_task.cancel()
+            try:
+                await self._monitoring_task
+            except asyncio.CancelledError:
+                pass
+
         if self._export_task:
             self._export_task.cancel()
+            try:
+                await self._export_task
+            except asyncio.CancelledError:
+                pass
 
         # Close Redis
         if self.redis_client:
@@ -89,7 +98,10 @@ class PerformanceMonitor:
 
     def get_total_predictions(self) -> int:
         """Get total number of predictions made"""
-        return prediction_counter._value.get()
+        try:
+            return int(prediction_counter._value.get())
+        except:
+            return 0
 
     async def track_prediction(self, prediction_result: Dict[str, Any]):
         """Track a fire prediction"""
@@ -193,7 +205,7 @@ class PerformanceMonitor:
 
         # Quantum metrics summary
         quantum_summary = {
-            'models': self.quantum_metrics,
+            'models': dict(self.quantum_metrics),
             'total_predictions': self.get_total_predictions(),
             'avg_prediction_time': self._calculate_avg_prediction_time()
         }
@@ -219,10 +231,10 @@ class PerformanceMonitor:
                 'rate_per_minute': self._calculate_prediction_rate()
             },
             'websockets': {
-                'active_connections': active_connections._value.get()
+                'active_connections': self._get_active_connections()
             },
             'data_pipeline': {
-                'points_processed': data_points_processed._value.get(),
+                'points_processed': self._get_data_points_processed(),
                 'collection_metrics': self._get_data_collection_metrics()
             },
             'timestamp': datetime.now().isoformat()
@@ -387,9 +399,23 @@ class PerformanceMonitor:
             avg_quantum = np.mean(quantum_times)
             # Estimated classical time for same problem
             estimated_classical = avg_quantum * 156.3  # Based on complexity analysis
-            return estimated_classical / avg_quantum
+            return estimated_classical / avg_quantum if avg_quantum > 0 else 156.3
 
         return 156.3  # Default theoretical speedup
+
+    def _get_active_connections(self) -> int:
+        """Get active WebSocket connections count"""
+        try:
+            return int(active_connections._value.get())
+        except:
+            return 0
+
+    def _get_data_points_processed(self) -> int:
+        """Get total data points processed"""
+        try:
+            return int(data_points_processed._value.get())
+        except:
+            return 0
 
     async def _monitor_system(self):
         """Background task to monitor system metrics"""
@@ -512,8 +538,8 @@ Total Predictions: {predictions}
 Average Prediction Time: {avg_time:.2f}s
 Current CPU Usage: {psutil.cpu_percent()}%
 Current Memory Usage: {psutil.virtual_memory().percent}%
-Active Connections: {active_connections._value.get()}
-Data Points Processed: {data_points_processed._value.get()}
+Active Connections: {self._get_active_connections()}
+Data Points Processed: {self._get_data_points_processed()}
 """
         return summary
 

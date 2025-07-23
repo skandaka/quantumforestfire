@@ -4,7 +4,7 @@ Location: backend/config.py
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import timedelta
 import os
@@ -17,13 +17,13 @@ class Settings(BaseSettings):
     # Application settings
     app_name: str = "Quantum Fire Prediction System"
     version: str = "1.0.0"
-    debug: bool = Field(default=False, env="DEBUG")
-    environment: str = Field(default="development", env="ENVIRONMENT")
+    debug: bool = Field(default=False, alias="DEBUG")
+    environment: str = Field(default="development", alias="ENVIRONMENT")
 
     # Server settings
-    host: str = Field(default="0.0.0.0", env="HOST")
-    port: int = Field(default=8000, env="PORT")
-    workers: int = Field(default=4, env="WORKERS")
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=8000, alias="PORT")
+    workers: int = Field(default=4, alias="WORKERS")
 
     # CORS settings
     cors_origins: List[str] = Field(
@@ -32,128 +32,130 @@ class Settings(BaseSettings):
             "http://localhost:8000",
             "https://quantum-fire.app"
         ],
-        env="CORS_ORIGINS"
+        alias="CORS_ORIGINS"
     )
 
     # API Keys - External Services
-    nasa_firms_api_key: Optional[str] = Field(None, env="NASA_FIRMS_API_KEY")
-    noaa_api_key: Optional[str] = Field(None, env="NOAA_API_KEY")
-    usgs_api_key: Optional[str] = Field(None, env="USGS_API_KEY")
-    mapbox_api_key: Optional[str] = Field(None, env="MAPBOX_API_KEY")
+    nasa_firms_api_key: Optional[str] = Field(default=None, alias="NASA_FIRMS_API_KEY")
+    noaa_api_key: Optional[str] = Field(default=None, alias="NOAA_API_KEY")
+    usgs_api_key: Optional[str] = Field(default=None, alias="USGS_API_KEY")
+    mapbox_api_key: Optional[str] = Field(default=None, alias="MAPBOX_API_KEY")
 
     # Quantum Platform Credentials
-    ibm_quantum_token: Optional[str] = Field(None, env="IBM_QUANTUM_TOKEN")
-    ibm_quantum_hub: str = Field(default="ibm-q", env="IBM_QUANTUM_HUB")
-    ibm_quantum_group: str = Field(default="open", env="IBM_QUANTUM_GROUP")
-    ibm_quantum_project: str = Field(default="main", env="IBM_QUANTUM_PROJECT")
+    ibm_quantum_token: Optional[str] = Field(default=None, alias="IBM_QUANTUM_TOKEN")
+    ibm_quantum_hub: str = Field(default="ibm-q", alias="IBM_QUANTUM_HUB")
+    ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
+    ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
 
-    classiq_api_key: Optional[str] = Field(None, env="CLASSIQ_API_KEY")
+    classiq_api_key: Optional[str] = Field(default=None, alias="CLASSIQ_API_KEY")
     classiq_api_endpoint: str = Field(
         default="https://platform.classiq.io/api/v1",
-        env="CLASSIQ_API_ENDPOINT"
+        alias="CLASSIQ_API_ENDPOINT"
     )
 
     # Database Configuration
     database_url: str = Field(
         default="postgresql://quantum:quantum@localhost:5432/quantum_fire",
-        env="DATABASE_URL"
+        alias="DATABASE_URL"
     )
-    database_pool_size: int = Field(default=20, env="DATABASE_POOL_SIZE")
-    database_max_overflow: int = Field(default=40, env="DATABASE_MAX_OVERFLOW")
+    database_pool_size: int = Field(default=20, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=40, alias="DATABASE_MAX_OVERFLOW")
 
     # Redis Configuration
     redis_url: str = Field(
         default="redis://localhost:6379/0",
-        env="REDIS_URL"
+        alias="REDIS_URL"
     )
-    redis_password: Optional[str] = Field(None, env="REDIS_PASSWORD")
-    redis_ssl: bool = Field(default=False, env="REDIS_SSL")
-    cache_ttl: int = Field(default=300, env="CACHE_TTL")  # 5 minutes
+    redis_password: Optional[str] = Field(default=None, alias="REDIS_PASSWORD")
+    redis_ssl: bool = Field(default=False, alias="REDIS_SSL")
+    cache_ttl: int = Field(default=300, alias="CACHE_TTL")  # 5 minutes
 
     # Data Collection Settings
-    data_collection_interval: int = Field(default=300, env="DATA_COLLECTION_INTERVAL")  # 5 minutes
-    nasa_firms_days_back: int = Field(default=7, env="NASA_FIRMS_DAYS_BACK")
-    weather_forecast_days: int = Field(default=5, env="WEATHER_FORECAST_DAYS")
-    max_fire_points: int = Field(default=10000, env="MAX_FIRE_POINTS")
+    data_collection_interval: int = Field(default=300, alias="DATA_COLLECTION_INTERVAL")  # 5 minutes
+    nasa_firms_days_back: int = Field(default=7, alias="NASA_FIRMS_DAYS_BACK")
+    weather_forecast_days: int = Field(default=5, alias="WEATHER_FORECAST_DAYS")
+    max_fire_points: int = Field(default=10000, alias="MAX_FIRE_POINTS")
 
     # Quantum Computing Settings
-    quantum_backend: str = Field(default="classiq_simulator", env="QUANTUM_BACKEND")
-    quantum_shots: int = Field(default=4096, env="QUANTUM_SHOTS")
-    quantum_optimization_level: int = Field(default=3, env="QUANTUM_OPTIMIZATION_LEVEL")
-    quantum_seed: Optional[int] = Field(42, env="QUANTUM_SEED")
-    enable_quantum_error_mitigation: bool = Field(default=True, env="ENABLE_ERROR_MITIGATION")
-    quantum_timeout: int = Field(default=300, env="QUANTUM_TIMEOUT")  # 5 minutes
+    quantum_backend: str = Field(default="classiq_simulator", alias="QUANTUM_BACKEND")
+    quantum_shots: int = Field(default=4096, alias="QUANTUM_SHOTS")
+    quantum_optimization_level: int = Field(default=3, alias="QUANTUM_OPTIMIZATION_LEVEL")
+    quantum_seed: Optional[int] = Field(default=42, alias="QUANTUM_SEED")
+    enable_quantum_error_mitigation: bool = Field(default=True, alias="ENABLE_ERROR_MITIGATION")
+    quantum_timeout: int = Field(default=300, alias="QUANTUM_TIMEOUT")  # 5 minutes
 
     # Prediction Settings
-    prediction_interval: int = Field(default=600, env="PREDICTION_INTERVAL")  # 10 minutes
-    prediction_grid_size: int = Field(default=100, env="PREDICTION_GRID_SIZE")  # 100x100 grid
-    prediction_time_steps: int = Field(default=48, env="PREDICTION_TIME_STEPS")  # 48 hours
-    ember_transport_radius: float = Field(default=5.0, env="EMBER_TRANSPORT_RADIUS")  # km
-    minimum_fire_confidence: float = Field(default=0.7, env="MINIMUM_FIRE_CONFIDENCE")
+    prediction_interval: int = Field(default=600, alias="PREDICTION_INTERVAL")  # 10 minutes
+    prediction_grid_size: int = Field(default=100, alias="PREDICTION_GRID_SIZE")  # 100x100 grid
+    prediction_time_steps: int = Field(default=48, alias="PREDICTION_TIME_STEPS")  # 48 hours
+    ember_transport_radius: float = Field(default=5.0, alias="EMBER_TRANSPORT_RADIUS")  # km
+    minimum_fire_confidence: float = Field(default=0.7, alias="MINIMUM_FIRE_CONFIDENCE")
 
     # Paradise Fire Demo Settings
-    paradise_demo_enabled: bool = Field(default=True, env="PARADISE_DEMO_ENABLED")
-    paradise_fire_date: str = Field(default="2018-11-08", env="PARADISE_FIRE_DATE")
-    paradise_lat: float = Field(default=39.7596, env="PARADISE_LAT")
-    paradise_lon: float = Field(default=-121.6219, env="PARADISE_LON")
+    paradise_demo_enabled: bool = Field(default=True, alias="PARADISE_DEMO_ENABLED")
+    paradise_fire_date: str = Field(default="2018-11-08", alias="PARADISE_FIRE_DATE")
+    paradise_lat: float = Field(default=39.7596, alias="PARADISE_LAT")
+    paradise_lon: float = Field(default=-121.6219, alias="PARADISE_LON")
 
     # Performance Settings
-    max_concurrent_predictions: int = Field(default=5, env="MAX_CONCURRENT_PREDICTIONS")
-    request_timeout: int = Field(default=60, env="REQUEST_TIMEOUT")
-    rate_limit_requests: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
-    rate_limit_period: int = Field(default=60, env="RATE_LIMIT_PERIOD")  # seconds
+    max_concurrent_predictions: int = Field(default=5, alias="MAX_CONCURRENT_PREDICTIONS")
+    request_timeout: int = Field(default=60, alias="REQUEST_TIMEOUT")
+    rate_limit_requests: int = Field(default=100, alias="RATE_LIMIT_REQUESTS")
+    rate_limit_period: int = Field(default=60, alias="RATE_LIMIT_PERIOD")  # seconds
 
     # Monitoring and Logging
-    log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    enable_performance_monitoring: bool = Field(default=True, env="ENABLE_MONITORING")
-    metrics_export_interval: int = Field(default=60, env="METRICS_EXPORT_INTERVAL")
-    sentry_dsn: Optional[str] = Field(None, env="SENTRY_DSN")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    enable_performance_monitoring: bool = Field(default=True, alias="ENABLE_MONITORING")
+    metrics_export_interval: int = Field(default=60, alias="METRICS_EXPORT_INTERVAL")
+    sentry_dsn: Optional[str] = Field(default=None, alias="SENTRY_DSN")
 
     # Security Settings
     secret_key: str = Field(
         default="quantum-fire-secret-key-change-in-production",
-        env="SECRET_KEY"
+        alias="SECRET_KEY"
     )
-    jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     # Feature Flags
-    enable_quantum_ml: bool = Field(default=True, env="ENABLE_QUANTUM_ML")
-    enable_3d_visualization: bool = Field(default=True, env="ENABLE_3D_VISUALIZATION")
-    enable_historical_validation: bool = Field(default=True, env="ENABLE_HISTORICAL_VALIDATION")
-    enable_real_time_updates: bool = Field(default=True, env="ENABLE_REAL_TIME_UPDATES")
+    enable_quantum_ml: bool = Field(default=True, alias="ENABLE_QUANTUM_ML")
+    enable_3d_visualization: bool = Field(default=True, alias="ENABLE_3D_VISUALIZATION")
+    enable_historical_validation: bool = Field(default=True, alias="ENABLE_HISTORICAL_VALIDATION")
+    enable_real_time_updates: bool = Field(default=True, alias="ENABLE_REAL_TIME_UPDATES")
 
     # File Storage
-    upload_dir: str = Field(default="./uploads", env="UPLOAD_DIR")
-    max_upload_size: int = Field(default=100 * 1024 * 1024, env="MAX_UPLOAD_SIZE")  # 100MB
+    upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
+    max_upload_size: int = Field(default=100 * 1024 * 1024, alias="MAX_UPLOAD_SIZE")  # 100MB
 
     # Model Paths
-    models_dir: str = Field(default="./models", env="MODELS_DIR")
-    quantum_circuits_dir: str = Field(default="./data/quantum_circuits", env="QUANTUM_CIRCUITS_DIR")
+    models_dir: str = Field(default="./models", alias="MODELS_DIR")
+    quantum_circuits_dir: str = Field(default="./data/quantum_circuits", alias="QUANTUM_CIRCUITS_DIR")
 
     # External API Endpoints
     nasa_firms_endpoint: str = Field(
         default="https://firms.modaps.eosdis.nasa.gov/api/area",
-        env="NASA_FIRMS_ENDPOINT"
+        alias="NASA_FIRMS_ENDPOINT"
     )
     noaa_weather_endpoint: str = Field(
         default="https://api.weather.gov",
-        env="NOAA_WEATHER_ENDPOINT"
+        alias="NOAA_WEATHER_ENDPOINT"
     )
     usgs_elevation_endpoint: str = Field(
         default="https://nationalmap.gov/epqs/pqs.php",
-        env="USGS_ELEVATION_ENDPOINT"
+        alias="USGS_ELEVATION_ENDPOINT"
     )
 
-    @validator("cors_origins", pre=True)
-    def parse_cors_origins(cls, v):
+    @field_validator("cors_origins", mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> List[str]:
         """Parse CORS origins from string or list"""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return v
 
-    @validator("quantum_backend")
-    def validate_quantum_backend(cls, v):
+    @field_validator("quantum_backend")
+    @classmethod
+    def validate_quantum_backend(cls, v: str) -> str:
         """Validate quantum backend selection"""
         valid_backends = [
             "classiq_simulator",
@@ -166,8 +168,9 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid quantum backend: {v}")
         return v
 
-    @validator("environment")
-    def validate_environment(cls, v):
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
         """Validate environment setting"""
         valid_environments = ["development", "staging", "production", "testing"]
         if v not in valid_environments:
@@ -233,10 +236,12 @@ class Settings(BaseSettings):
         """Check if running in development"""
         return self.environment == "development"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "populate_by_name": True
+    }
 
 
 # Create global settings instance
@@ -244,7 +249,7 @@ settings = Settings()
 
 
 # Validate critical settings on startup
-def validate_settings():
+def validate_settings() -> List[str]:
     """Validate critical settings and warn about missing configurations"""
     warnings = []
 

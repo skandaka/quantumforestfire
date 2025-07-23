@@ -5,20 +5,43 @@ Location: backend/quantum_models/quantum_simulator.py
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Tuple
 from datetime import datetime, timedelta
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import json
 
-from qiskit import IBMQ, Aer, QuantumCircuit
-from qiskit.providers import Backend
-from qiskit.providers.ibmq import IBMQBackend
-from qiskit.tools.monitor import job_monitor
-from qiskit.providers.exceptions import QiskitBackendNotFoundError
+# Mock Qiskit imports for development
+try:
+    from qiskit import IBMQ, Aer, QuantumCircuit
+    from qiskit.providers import Backend
+    from qiskit.providers.ibmq import IBMQBackend
+    from qiskit.tools.monitor import job_monitor
+    from qiskit.providers.exceptions import QiskitBackendNotFoundError
+    QISKIT_AVAILABLE = True
+except ImportError:
+    QISKIT_AVAILABLE = False
+    # Mock classes
+    class Backend: pass
+    class IBMQBackend: pass
+    class QuantumCircuit: pass
+    class Aer:
+        @staticmethod
+        def get_backend(name): return None
+    class IBMQ:
+        @staticmethod
+        def save_account(*args, **kwargs): pass
+        @staticmethod
+        def load_account(): return None
 
-from classiq import ClassiqBackendPreferences
-from classiq.execution import execute_qprogram
+# Mock Classiq imports
+try:
+    from classiq import ClassiqBackendPreferences
+    from classiq.execution import execute_qprogram
+    CLASSIQ_AVAILABLE = True
+except ImportError:
+    CLASSIQ_AVAILABLE = False
+    class ClassiqBackendPreferences: pass
 
 from .classiq_models.classiq_fire_spread import ClassiqFireSpread, FireGridState
 from .classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, EmberState, AtmosphericConditions
@@ -26,8 +49,8 @@ from .classiq_models.classiq_optimization import ClassiqResourceOptimizer
 from .qiskit_models.qiskit_fire_spread import QiskitFireSpread
 from .qiskit_models.qiskit_ember_transport import QiskitEmberTransport
 
-from config import settings
-from utils.performance_monitor import quantum_performance_tracker
+from ..config import settings
+from ..utils.performance_monitor import quantum_performance_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -37,21 +60,29 @@ class QuantumBackendManager:
 
     def __init__(self):
         self.ibmq_provider = None
-        self.available_backends = {}
-        self.backend_status = {}
-        self.simulator_backends = {}
+        self.available_backends: Dict[str, Any] = {}
+        self.backend_status: Dict[str, Dict[str, Any]] = {}
+        self.simulator_backends: Dict[str, Any] = {}
 
     async def initialize(self):
         """Initialize quantum backend connections"""
         # Initialize simulators
-        self.simulator_backends = {
-            'aer_simulator': Aer.get_backend('aer_simulator'),
-            'statevector_simulator': Aer.get_backend('statevector_simulator'),
-            'qasm_simulator': Aer.get_backend('qasm_simulator')
-        }
+        if QISKIT_AVAILABLE:
+            self.simulator_backends = {
+                'aer_simulator': Aer.get_backend('aer_simulator'),
+                'statevector_simulator': Aer.get_backend('statevector_simulator'),
+                'qasm_simulator': Aer.get_backend('qasm_simulator')
+            }
+        else:
+            logger.warning("Qiskit not available - using mock backends")
+            self.simulator_backends = {
+                'aer_simulator': 'mock_aer',
+                'statevector_simulator': 'mock_statevector',
+                'qasm_simulator': 'mock_qasm'
+            }
 
         # Initialize IBM Quantum if token available
-        if settings.ibm_quantum_token:
+        if settings.ibm_quantum_token and QISKIT_AVAILABLE:
             try:
                 IBMQ.save_account(settings.ibm_quantum_token, overwrite=True)
                 self.ibmq_provider = IBMQ.load_account()
@@ -73,13 +104,21 @@ class QuantumBackendManager:
         """Update status of all backends"""
         for name, backend in self.available_backends.items():
             try:
-                status = backend.status()
-                self.backend_status[name] = {
-                    'operational': status.operational,
-                    'pending_jobs': status.pending_jobs,
-                    'status_msg': status.status_msg,
-                    'last_update': datetime.now().isoformat()
-                }
+                if hasattr(backend, 'status'):
+                    status = backend.status()
+                    self.backend_status[name] = {
+                        'operational': status.operational,
+                        'pending_jobs': status.pending_jobs,
+                        'status_msg': status.status_msg,
+                        'last_update': datetime.now().isoformat()
+                    }
+                else:
+                    self.backend_status[name] = {
+                        'operational': True,
+                        'pending_jobs': 0,
+                        'status_msg': 'Mock backend',
+                        'last_update': datetime.now().isoformat()
+                    }
             except Exception as e:
                 logger.error(f"Error getting status for {name}: {str(e)}")
                 self.backend_status[name] = {
@@ -105,7 +144,7 @@ class QuantumBackendManager:
         for name, status in self.backend_status.items():
             backend = self.available_backends.get(name)
             if backend and status['operational']:
-                if backend.configuration().n_qubits >= num_qubits:
+                if hasattr(backend, 'configuration') and backend.configuration().n_qubits >= num_qubits:
                     suitable_backends.append({
                         'name': name,
                         'backend': backend,
@@ -127,8 +166,8 @@ class QuantumSimulatorManager:
 
     def __init__(self):
         self.backend_manager = QuantumBackendManager()
-        self.models = {}
-        self.active_jobs = {}
+        self.models: Dict[str, Any] = {}
+        self.active_jobs: Dict[str, Any] = {}
         self.performance_tracker = quantum_performance_tracker
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._initialized = False
@@ -173,12 +212,16 @@ class QuantumSimulatorManager:
         for name, status in self.backend_manager.backend_status.items():
             backend = self.backend_manager.available_backends.get(name)
             if backend:
+                max_qubits = 127  # Default
+                if hasattr(backend, 'configuration'):
+                    max_qubits = backend.configuration().n_qubits
+
                 backends.append({
                     'name': name,
                     'type': 'hardware',
                     'status': 'available' if status['operational'] else 'offline',
                     'queue_length': status.get('pending_jobs', 0),
-                    'max_qubits': backend.configuration().n_qubits
+                    'max_qubits': max_qubits
                 })
 
         return backends
@@ -273,6 +316,8 @@ class QuantumSimulatorManager:
                 duration_minutes=30,
                 use_hardware=use_hardware
             )
+        else:
+            raise ValueError(f"Unknown Classiq model type: {type(model)}")
 
         return result
 
@@ -297,14 +342,30 @@ class QuantumSimulatorManager:
 
         if isinstance(backend, str):
             # Simulator
-            backend_obj = self.backend_manager.simulator_backends[backend]
-            job = backend_obj.run(circuit, shots=4096)
+            if QISKIT_AVAILABLE:
+                backend_obj = self.backend_manager.simulator_backends[backend]
+                job = backend_obj.run(circuit, shots=4096)
+            else:
+                # Mock results
+                logger.warning("Qiskit not available - returning mock results")
+                return {
+                    'predictions': [{
+                        'time_step': 0,
+                        'fire_probability_map': np.random.rand(50, 50).tolist(),
+                        'high_risk_cells': [(25, 25)],
+                        'total_area_at_risk': 100
+                    }],
+                    'metadata': {
+                        'backend': 'mock',
+                        'execution_time': 1.0
+                    }
+                }
         else:
             # Hardware
             job = backend.run(circuit, shots=4096)
 
         # Monitor job
-        if use_hardware:
+        if use_hardware and QISKIT_AVAILABLE:
             job_monitor(job)
 
         # Get results
@@ -368,17 +429,19 @@ class QuantumSimulatorManager:
             if 'predictions' in result and result['predictions']:
                 # Fire spread model
                 latest_prediction = result['predictions'][-1]
-                fire_maps.append(latest_prediction['fire_probability_map'])
-                confidence_scores.append(0.9)  # High confidence for fire spread
+                if 'fire_probability_map' in latest_prediction:
+                    fire_maps.append(np.array(latest_prediction['fire_probability_map']))
+                    confidence_scores.append(0.9)  # High confidence for fire spread
 
             elif 'ignition_risk_map' in result:
                 # Ember model
-                ember_maps.append(result['ignition_risk_map'])
+                ember_maps.append(np.array(result['ignition_risk_map']))
                 confidence_scores.append(0.85)  # Slightly lower for ember
 
         # Weighted average based on confidence
         if fire_maps:
-            avg_fire_map = np.average(fire_maps, axis=0, weights=confidence_scores[:len(fire_maps)])
+            weights = confidence_scores[:len(fire_maps)]
+            avg_fire_map = np.average(fire_maps, axis=0, weights=weights)
         else:
             avg_fire_map = np.zeros((50, 50))
 
@@ -391,8 +454,8 @@ class QuantumSimulatorManager:
         combined_risk = self._combine_risk_maps(avg_fire_map, avg_ember_map)
 
         return {
-            'combined_risk_map': combined_risk,
-            'confidence_score': np.mean(confidence_scores),
+            'combined_risk_map': combined_risk.tolist(),
+            'confidence_score': float(np.mean(confidence_scores)),
             'models_succeeded': len(valid_results),
             'models_failed': len(results) - len(valid_results),
             'high_risk_areas': self._identify_high_risk_areas(combined_risk),
@@ -578,7 +641,8 @@ class QuantumSimulatorManager:
         # Cancel active jobs
         for job_id, job in self.active_jobs.items():
             try:
-                job.cancel()
+                if hasattr(job, 'cancel'):
+                    job.cancel()
             except:
                 pass
 

@@ -16,7 +16,7 @@ import rasterio
 from rasterio.transform import from_origin
 import json
 
-from config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ class FireDataProcessor:
                 processed['statistics'] = {
                     'total_detections': len(fires_df),
                     'fire_complexes': len(fire_complexes),
-                    'max_intensity': fires_df['intensity'].max() if 'intensity' in fires_df else 0,
+                    'max_intensity': float(fires_df['intensity'].max()) if 'intensity' in fires_df else 0,
                     'total_area_hectares': sum(f['area_hectares'] for f in fire_complexes)
                 }
 
@@ -133,10 +133,10 @@ class FireDataProcessor:
             if not stations_df.empty:
                 # Aggregate current conditions
                 processed['current_conditions'] = {
-                    'avg_temperature': stations_df['temperature'].mean(),
-                    'avg_humidity': stations_df['humidity'].mean(),
-                    'avg_wind_speed': stations_df['wind_speed'].mean(),
-                    'max_wind_speed': stations_df['wind_speed'].max(),
+                    'avg_temperature': float(stations_df['temperature'].mean()),
+                    'avg_humidity': float(stations_df['humidity'].mean()),
+                    'avg_wind_speed': float(stations_df['wind_speed'].mean()),
+                    'max_wind_speed': float(stations_df['wind_speed'].max()),
                     'dominant_wind_direction': self._calculate_dominant_wind_direction(stations_df)
                 }
 
@@ -299,20 +299,20 @@ class FireDataProcessor:
                 for _, fire in fires_df[fires_df['cluster'] == -1].iterrows():
                     fire_complexes.append({
                         'id': f"fire_{len(fire_complexes)}",
-                        'center_lat': fire['latitude'],
-                        'center_lon': fire['longitude'],
+                        'center_lat': float(fire['latitude']),
+                        'center_lon': float(fire['longitude']),
                         'area_hectares': 10,  # Default small area
-                        'intensity': fire.get('intensity', 0.5),
+                        'intensity': float(fire.get('intensity', 0.5)),
                         'detection_time': fire.get('detection_time', datetime.now().isoformat()),
-                        'confidence': fire.get('confidence', 0.8)
+                        'confidence': float(fire.get('confidence', 0.8))
                     })
             else:
                 # Process cluster
                 cluster_fires = fires_df[fires_df['cluster'] == cluster_id]
 
                 # Calculate cluster properties
-                center_lat = cluster_fires['latitude'].mean()
-                center_lon = cluster_fires['longitude'].mean()
+                center_lat = float(cluster_fires['latitude'].mean())
+                center_lon = float(cluster_fires['longitude'].mean())
 
                 # Estimate area based on point spread
                 lat_range = cluster_fires['latitude'].max() - cluster_fires['latitude'].min()
@@ -323,11 +323,10 @@ class FireDataProcessor:
                     'id': f"fire_{cluster_id}",
                     'center_lat': center_lat,
                     'center_lon': center_lon,
-                    'area_hectares': area_hectares,
-                    'intensity': cluster_fires['intensity'].max() if 'intensity' in cluster_fires else 0.5,
-                    'detection_time': cluster_fires[
-                        'detection_time'].min() if 'detection_time' in cluster_fires else datetime.now().isoformat(),
-                    'confidence': cluster_fires['confidence'].mean() if 'confidence' in cluster_fires else 0.8,
+                    'area_hectares': float(area_hectares),
+                    'intensity': float(cluster_fires['intensity'].max()) if 'intensity' in cluster_fires else 0.5,
+                    'detection_time': cluster_fires['detection_time'].min() if 'detection_time' in cluster_fires else datetime.now().isoformat(),
+                    'confidence': float(cluster_fires['confidence'].mean()) if 'confidence' in cluster_fires else 0.8,
                     'detection_count': len(cluster_fires)
                 })
 
@@ -429,7 +428,7 @@ class FireDataProcessor:
         if dominant_direction < 0:
             dominant_direction += 360
 
-        return dominant_direction
+        return float(dominant_direction)
 
     def _calculate_fire_weather_indices(self, fire_weather_data: Dict[str, Any]) -> Dict[str, float]:
         """Calculate fire weather indices"""
@@ -458,19 +457,19 @@ class FireDataProcessor:
         """Calculate Haines Index for atmospheric instability"""
         # Simplified calculation
         stability = min(3, max(1, (temp_850 - dewpoint_850) / 10))
-        return stability
+        return float(stability)
 
     def _calculate_erc(self, fuel_moisture: float) -> float:
         """Calculate Energy Release Component"""
         # Simplified ERC calculation
         erc = 100 - fuel_moisture
-        return max(0, min(100, erc))
+        return float(max(0, min(100, erc)))
 
     def _calculate_burning_index(self, wind_speed: float, fuel_moisture: float) -> float:
         """Calculate Burning Index"""
         # Simplified calculation
         bi = (100 - fuel_moisture) * (wind_speed / 10)
-        return max(0, min(100, bi))
+        return float(max(0, min(100, bi)))
 
     def _calculate_slope(self, elevation: np.ndarray) -> np.ndarray:
         """Calculate slope from elevation data"""
@@ -602,7 +601,7 @@ class FireDataProcessor:
         return {
             'type': 'fire_detection',
             'location': {'latitude': lat, 'longitude': lon},
-            'intensity': intensity,
+            'intensity': float(intensity),
             'confidence': fire_data.get('confidence', 0.8),
             'timestamp': fire_data.get('detection_time', datetime.now().isoformat()),
             'requires_quantum_update': intensity > 0.7  # High intensity fires need immediate quantum prediction
@@ -645,10 +644,10 @@ class FireDataProcessor:
                 new_fires.append({
                     'latitude': pixel['latitude'],
                     'longitude': pixel['longitude'],
-                    'intensity': self._calculate_fire_intensity(
+                    'intensity': float(self._calculate_fire_intensity(
                         np.array([pixel.get('temperature', 400)]),
                         np.array([pixel.get('frp', 50)])
-                    )[0],
+                    )[0]),
                     'confidence': pixel['confidence']
                 })
 
