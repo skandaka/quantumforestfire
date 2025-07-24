@@ -94,3 +94,10 @@ logs/
 
 # Redis
 dump.rdb
+
+# Node
+/node_modules
+/frontend/node_modules
+/frontend/.next/
+npm-debug.log
+yarn-error.log

@@ -1,12 +1,14 @@
 """
 Fire Data Processor for Quantum Fire Prediction System
 Location: backend/data_pipeline/data_processor.py
+
+FIXED: Added Optional to the typing imports
 """
 
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional  # FIXED: Added Optional here
 from datetime import datetime
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
