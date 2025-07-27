@@ -32,49 +32,64 @@ export function useRealTimeData() {
   } = useFirePredictionStore()
 
   // Fetch fire data
-  const { data: fireDataResponse } = useQuery({
+  const { data: fireDataResponse, isLoading: isLoadingFireData } = useQuery({
     queryKey: ['fire-data'],
     queryFn: () => api.getFireData(),
     refetchInterval: 60000, // Refresh every minute
-    onSuccess: (data) => {
-      setFireData(data.data)
-      setActiveFireCount(data.data?.active_fires?.length || 0)
-    }
   })
 
+  useEffect(() => {
+    if (fireDataResponse) {
+      const data = fireDataResponse.data;
+      setFireData(data)
+      setActiveFireCount(data?.active_fires?.length || 0)
+    }
+  }, [fireDataResponse, setFireData])
+
+
   // Fetch weather data
-  const { data: weatherDataResponse } = useQuery({
+  const { data: weatherDataResponse, isLoading: isLoadingWeatherData } = useQuery({
     queryKey: ['weather-data'],
     queryFn: () => api.getWeatherData(),
     refetchInterval: 300000, // Refresh every 5 minutes
-    onSuccess: (data) => {
-      setWeatherData(data.data)
-    }
   })
+
+  useEffect(() => {
+    if (weatherDataResponse) {
+      setWeatherData(weatherDataResponse.data)
+    }
+  }, [weatherDataResponse, setWeatherData])
+
 
   // Subscribe to real-time alerts
   useEffect(() => {
-    const unsubscribe = api.subscribeToAlerts((alert: any) => {
-      const newAlert: Alert = {
-        id: `alert_${Date.now()}`,
-        type: alert.type || 'fire',
-        severity: alert.severity || 'medium',
-        title: alert.title || 'New Alert',
-        message: alert.message || 'Alert received',
-        location: alert.location,
-        timestamp: new Date().toISOString()
-      }
+    // This is a placeholder for a real WebSocket/SSE implementation
+    // A real implementation would connect to the backend's /ws endpoint
+    // and call the handler below.
+    const handleAlert = (alert: any) => {
+        const newAlert: Alert = {
+          id: `alert_${Date.now()}`,
+          type: alert.type || 'fire',
+          severity: alert.severity || 'medium',
+          title: alert.title || 'New Alert',
+          message: alert.message || 'Alert received',
+          location: alert.location,
+          timestamp: new Date().toISOString()
+        }
 
-      setActiveAlerts(prev => [newAlert, ...prev].slice(0, 50))
-      addAlert(newAlert)
+        setActiveAlerts(prev => [newAlert, ...prev].slice(0, 50))
+        addAlert(newAlert)
 
-      // Show toast for high severity alerts
-      if (newAlert.severity === 'critical' || newAlert.severity === 'high') {
-        toast.error(newAlert.message, { duration: 10000 })
-      }
-    })
+        if (newAlert.severity === 'critical' || newAlert.severity === 'high') {
+          toast.error(newAlert.message, { duration: 10000 })
+        }
+    };
 
-    return () => unsubscribe()
+    // To-do: connect to a real event source from api.ts
+    // const unsubscribe = api.subscribeToAlerts(handleAlert);
+    // return () => unsubscribe();
+
+    return () => {}; // Placeholder cleanup
   }, [addAlert])
 
   // Calculate high risk areas from fire data
@@ -87,9 +102,7 @@ export function useRealTimeData() {
     }
   }, [fireData])
 
-  // Subscribe to updates callback
   const subscribeToUpdates = useCallback((callback: (update: any) => void) => {
-    // Create a wrapper to call the callback with updates
     const interval = setInterval(() => {
       if (activeAlerts.length > 0) {
         callback({
@@ -104,19 +117,14 @@ export function useRealTimeData() {
   }, [activeAlerts])
 
   return {
-    // Data
     fireData,
     weatherData,
     activeAlerts,
     activeFireCount,
     highRiskAreas,
     weatherAlerts,
-
-    // Actions
     subscribeToUpdates,
-
-    // Loading states
-    isLoadingFireData: !fireDataResponse,
-    isLoadingWeatherData: !weatherDataResponse
+    isLoadingFireData,
+    isLoadingWeatherData
   }
 }

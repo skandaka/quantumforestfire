@@ -1,0 +1,27 @@
+# Server
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic-settings
+
+# Quantum Computing & ML
+qiskit
+qiskit-ibm-runtime
+qiskit-aer
+classiq
+numpy
+scipy
+scikit-learn
+
+# Data & GIS
+redis
+aiohttp
+requests
+pandas
+geopandas
+rasterio
+shapely
+
+# Optional (for performance)
+uvloop
+httptools
