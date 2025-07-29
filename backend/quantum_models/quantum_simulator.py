@@ -55,6 +55,7 @@ from .classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, Atmosph
 from .classiq_models.classiq_optimization import ClassiqOptimization
 from .classiq_models.classiq_ember_transport import QiskitEmberTransport
 
+
 # Mock settings class
 class MockSettings:
     def __init__(self):
