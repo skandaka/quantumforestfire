@@ -64,7 +64,7 @@ class MockSettings:
 
 # Use mock settings if backend.config is not available
 try:
-    from backend.config import settings
+    from config import settings
 except ImportError:
     settings = MockSettings()
 

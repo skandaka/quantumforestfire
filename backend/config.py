@@ -3,7 +3,6 @@ Configuration management for Quantum Fire Prediction System
 Location: backend/config.py
 """
 
-
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from typing import Optional, List, Dict, Any
@@ -48,11 +47,12 @@ class Settings(BaseSettings):
     ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
     ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
 
-    classiq_api_key: Optional[str] = Field(default=None, alias="CLASSIQ_API_KEY")
-    classiq_api_endpoint: str = Field(
-        default="https://platform.classiq.io/api/v1",
-        alias="CLASSIQ_API_ENDPOINT"
+    # Classiq Configuration (No API key needed - uses SDK authentication)
+    classiq_platform_url: str = Field(
+        default="https://platform.classiq.io",
+        alias="CLASSIQ_PLATFORM_URL"
     )
+    classiq_timeout: int = Field(default=300, alias="CLASSIQ_TIMEOUT")
 
     # Database Configuration
     database_url: str = Field(
@@ -208,8 +208,8 @@ class Settings(BaseSettings):
             "error_mitigation": self.enable_quantum_error_mitigation,
             "timeout": self.quantum_timeout,
             "classiq": {
-                "api_key": self.classiq_api_key,
-                "endpoint": self.classiq_api_endpoint
+                "platform_url": self.classiq_platform_url,
+                "timeout": self.classiq_timeout
             },
             "ibm": {
                 "token": self.ibm_quantum_token,
@@ -259,10 +259,6 @@ def validate_settings() -> List[str]:
         warnings.append("NASA FIRMS API key not configured")
     if not settings.noaa_api_key:
         warnings.append("NOAA API key not configured")
-    if not settings.classiq_api_key:
-        warnings.append("Classiq API key not configured")
-    if not settings.ibm_quantum_token:
-        warnings.append("IBM Quantum token not configured")
 
     # Check production settings
     if settings.is_production():

@@ -10,8 +10,9 @@ import asyncio
 import json
 from dataclasses import dataclass
 from enum import Enum
+import os
 
-# Mock Classiq imports for development (replace with actual imports when available)
+# Classiq SDK imports
 try:
     from classiq import (
         authenticate,
@@ -25,10 +26,20 @@ try:
         OptimizationParameter,
         show,
         ClassiqBackendPreferences,
-        BackendServiceProvider
+        BackendServiceProvider,
+        VQESolver,
+        QAOASolver,
+        GroverOperator,
+        AmplitudeEstimation,
+        PhaseEstimation,
+        get_authentication_token,
+        set_quantum_program_execution_preferences,
+        SerializedQuantumProgram
     )
-    from classiq.execution import ExecutionDetails
+    from classiq.execution import ExecutionDetails, ExecutionJob
     from classiq.synthesis import SerializedModel
+    from classiq.interface.backend.backend_preferences import ClassiqSimulatorBackendNames
+    from classiq.interface.generator.model import ModelDesigner
     CLASSIQ_AVAILABLE = True
 except ImportError:
     CLASSIQ_AVAILABLE = False
@@ -41,6 +52,10 @@ except ImportError:
     class BackendServiceProvider: pass
     class ExecutionDetails: pass
     class SerializedModel: pass
+    class ModelDesigner: pass
+    class ClassiqSimulatorBackendNames:
+        SIMULATOR = "simulator"
+        SIMULATOR_STATEVECTOR = "simulator_statevector"
 
 from ..config import settings
 
@@ -50,6 +65,8 @@ logger = logging.getLogger(__name__)
 class ClassiqBackendType(Enum):
     """Available Classiq backend types"""
     SIMULATOR = "simulator"
+    SIMULATOR_STATEVECTOR = "simulator_statevector"
+    SIMULATOR_DENSITY_MATRIX = "simulator_density_matrix"
     IBMQ = "ibmq"
     AWS_BRAKET = "aws_braket"
     AZURE_QUANTUM = "azure_quantum"
@@ -74,32 +91,41 @@ class ClassiqModelInfo:
 class ClassiqManager:
     """Manager for Classiq quantum platform integration"""
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.classiq_api_key
-        self.api_endpoint = settings.classiq_api_endpoint
+    def __init__(self):
         self.is_authenticated = False
         self.available_backends: Dict[str, Dict[str, Any]] = {}
         self.cached_models: Dict[str, Dict[str, Any]] = {}
         self.synthesis_history: List[Dict[str, Any]] = []
         self.execution_history: List[Dict[str, Any]] = []
+        self._auth_token = None
 
     async def initialize(self):
         """Initialize Classiq connection and authentication"""
         try:
             logger.info("Initializing Classiq Manager...")
 
-            if not self.api_key:
-                logger.warning("No Classiq API key provided")
-                return
-
             if not CLASSIQ_AVAILABLE:
                 logger.warning("Classiq SDK not available - running in mock mode")
                 self.is_authenticated = False
                 return
 
-            # Authenticate with Classiq
-            authenticate(self.api_key)
-            self.is_authenticated = True
+            # Authenticate with Classiq platform
+            # For production, you would use proper authentication credentials
+            # The authenticate() function opens a browser for login if needed
+            try:
+                # Check if we have cached credentials
+                self._auth_token = get_authentication_token()
+                if self._auth_token:
+                    self.is_authenticated = True
+                else:
+                    # Initiate authentication - this will open a browser
+                    authenticate()
+                    self._auth_token = get_authentication_token()
+                    self.is_authenticated = True
+            except Exception as auth_error:
+                logger.warning(f"Classiq authentication required: {auth_error}")
+                # In production, you might want to handle this differently
+                self.is_authenticated = False
 
             # Get available backends
             await self._discover_backends()
@@ -120,16 +146,26 @@ class ClassiqManager:
     async def _discover_backends(self):
         """Discover available quantum backends through Classiq"""
         try:
-            # Get simulator backends
+            # Classiq simulators (always available)
             self.available_backends['simulator'] = {
                 'type': ClassiqBackendType.SIMULATOR.value,
-                'name': 'classiq_simulator',
+                'name': ClassiqSimulatorBackendNames.SIMULATOR,
                 'max_qubits': 30,
                 'status': 'available',
-                'queue_length': 0
+                'queue_length': 0,
+                'provider': 'Classiq'
             }
 
-            # Check for hardware backends if credentials are configured
+            self.available_backends['simulator_statevector'] = {
+                'type': ClassiqBackendType.SIMULATOR_STATEVECTOR.value,
+                'name': ClassiqSimulatorBackendNames.SIMULATOR_STATEVECTOR,
+                'max_qubits': 25,
+                'status': 'available',
+                'queue_length': 0,
+                'provider': 'Classiq'
+            }
+
+            # Hardware backends (if credentials are configured)
             if settings.ibm_quantum_token:
                 self.available_backends['ibm_quantum'] = {
                     'type': ClassiqBackendType.IBMQ.value,
@@ -137,11 +173,12 @@ class ClassiqManager:
                     'max_qubits': 127,
                     'status': 'available',
                     'queue_length': 0,
+                    'provider': 'IBM',
                     'backends': ['ibm_kyoto', 'ibm_osaka', 'ibm_brisbane']
                 }
 
-            # Add other backends as configured
-            # AWS Braket, Azure Quantum, etc.
+            # Add other cloud providers as they become available
+            # AWS Braket, Azure Quantum, IonQ, etc.
 
         except Exception as e:
             logger.error(f"Error discovering backends: {str(e)}")
@@ -149,7 +186,19 @@ class ClassiqManager:
     async def _load_cached_models(self):
         """Load previously synthesized models from cache"""
         # In production, this would load from persistent storage
-        pass
+        cache_dir = settings.quantum_circuits_dir
+        if os.path.exists(cache_dir):
+            for filename in os.listdir(cache_dir):
+                if filename.endswith('.qmod'):
+                    try:
+                        model_id = filename.replace('.qmod', '')
+                        # In real implementation, load the serialized model
+                        self.cached_models[model_id] = {
+                            'filename': filename,
+                            'loaded': False
+                        }
+                    except Exception as e:
+                        logger.error(f"Error loading cached model {filename}: {e}")
 
     async def synthesize_model(
             self,
@@ -168,6 +217,9 @@ class ClassiqManager:
             if not CLASSIQ_AVAILABLE:
                 raise RuntimeError("Classiq SDK not available")
 
+            if not self.is_authenticated:
+                raise RuntimeError("Not authenticated with Classiq platform")
+
             start_time = datetime.now()
 
             logger.info(f"Synthesizing Classiq model with optimization level {optimization_level}")
@@ -176,26 +228,27 @@ class ClassiqManager:
             if constraints is None:
                 constraints = Constraints(
                     max_circuit_depth=1000,
-                    max_gate_count=50000,
-                    optimization_level=optimization_level
+                    max_circuit_width=100,
+                    optimization_parameter=OptimizationParameter.DEPTH
                 )
 
-            # Configure synthesis preferences
-            preferences = {
-                'optimization_level': optimization_level,
-                'backend_name': backend_name
-            }
+            # Configure backend preferences if specified
+            if backend_name:
+                backend_prefs = self._get_backend_preferences(backend_name)
+                model.preferences.backend_preferences = backend_prefs
+
+            # Set optimization preferences
+            model.preferences.optimization_level = optimization_level
+
+            # Apply constraints
+            model.constraints = constraints
 
             # Synthesize the model
-            quantum_program = synthesize(
-                model,
-                constraints=constraints,
-                preferences=preferences
-            )
+            quantum_program = synthesize(model)
 
             synthesis_time = (datetime.now() - start_time).total_seconds()
 
-            # Get circuit metrics
+            # Extract circuit metrics
             metrics = self._extract_circuit_metrics(quantum_program)
 
             # Cache the synthesized model
@@ -205,6 +258,11 @@ class ClassiqManager:
                 'metrics': metrics,
                 'synthesis_time': synthesis_time
             }
+
+            # Save to disk if configured
+            if settings.quantum_circuits_dir:
+                save_path = os.path.join(settings.quantum_circuits_dir, f"{model_id}.qmod")
+                quantum_program.save(save_path)
 
             # Record synthesis history
             self.synthesis_history.append({
@@ -224,6 +282,25 @@ class ClassiqManager:
             logger.error(f"Error synthesizing model: {str(e)}")
             raise
 
+    def _get_backend_preferences(self, backend_name: str) -> 'ClassiqBackendPreferences':
+        """Get backend preferences for a specific backend"""
+        if backend_name in ['simulator', 'simulator_statevector']:
+            return ClassiqBackendPreferences(
+                backend_service_provider=BackendServiceProvider.CLASSIQ,
+                backend_name=backend_name
+            )
+        elif 'ibm' in backend_name:
+            return ClassiqBackendPreferences(
+                backend_service_provider=BackendServiceProvider.IBM_QUANTUM,
+                backend_name=backend_name
+            )
+        else:
+            # Default to Classiq simulator
+            return ClassiqBackendPreferences(
+                backend_service_provider=BackendServiceProvider.CLASSIQ,
+                backend_name=ClassiqSimulatorBackendNames.SIMULATOR
+            )
+
     async def execute_quantum_program(
             self,
             quantum_program: 'QuantumProgram',
@@ -236,34 +313,36 @@ class ClassiqManager:
             if not CLASSIQ_AVAILABLE:
                 raise RuntimeError("Classiq SDK not available")
 
+            if not self.is_authenticated:
+                raise RuntimeError("Not authenticated with Classiq platform")
+
             start_time = datetime.now()
 
             # Configure execution preferences
-            if backend_type == ClassiqBackendType.SIMULATOR:
-                backend_prefs = ClassiqBackendPreferences(
-                    backend_name="simulator"
-                )
-            elif backend_type == ClassiqBackendType.IBMQ:
-                backend_prefs = ClassiqBackendPreferences(
-                    backend_name=backend_name or "ibm_kyoto",
-                    backend_service_provider=BackendServiceProvider.IBM_QUANTUM
-                )
-            else:
-                raise ValueError(f"Unsupported backend type: {backend_type}")
-
             exec_prefs = ExecutionPreferences(
-                backend_preferences=backend_prefs,
                 num_shots=num_shots,
                 random_seed=settings.quantum_seed
+            )
+
+            # Set backend preferences
+            backend_prefs = self._get_backend_preferences(
+                backend_name or backend_type.value
+            )
+
+            set_quantum_program_execution_preferences(
+                quantum_program,
+                preferences=exec_prefs,
+                backend_preferences=backend_prefs
             )
 
             logger.info(f"Executing on {backend_type.value} with {num_shots} shots")
 
             # Execute the program
-            execution_result = execute(
-                quantum_program,
-                execution_preferences=exec_prefs
-            )
+            job: ExecutionJob = execute(quantum_program)
+
+            # Wait for results
+            job.wait()
+            execution_result = job.result()
 
             execution_time = (datetime.now() - start_time).total_seconds()
 
@@ -273,7 +352,8 @@ class ClassiqManager:
                 'backend': backend_type.value,
                 'shots': num_shots,
                 'execution_time': execution_time,
-                'status': 'completed'
+                'status': 'completed',
+                'job_id': job.id if hasattr(job, 'id') else None
             })
 
             logger.info(f"Execution completed in {execution_time:.2f}s")
@@ -287,23 +367,26 @@ class ClassiqManager:
     def _extract_circuit_metrics(self, quantum_program: 'QuantumProgram') -> Dict[str, Any]:
         """Extract metrics from synthesized quantum program"""
         try:
-            # In actual Classiq SDK, these would be extracted from the program
-            # For now, return estimated metrics
+            # Access circuit properties from the quantum program
+            # This depends on Classiq's API for accessing circuit details
+            circuit_data = quantum_program.data if hasattr(quantum_program, 'data') else {}
+
             return {
-                'qubit_count': 20,
-                'gate_count': 1500,
-                'circuit_depth': 100,
-                'two_qubit_gates': 300,
-                'optimizations_applied': [
-                    'gate_fusion',
-                    'commutation_analysis',
-                    'template_matching',
-                    'peephole_optimization'
-                ]
+                'qubit_count': circuit_data.get('qubit_count', 0),
+                'gate_count': circuit_data.get('gate_count', 0),
+                'circuit_depth': circuit_data.get('depth', 0),
+                'two_qubit_gates': circuit_data.get('two_qubit_gate_count', 0),
+                'optimizations_applied': circuit_data.get('optimizations', [])
             }
         except Exception as e:
             logger.error(f"Error extracting metrics: {str(e)}")
-            return {}
+            return {
+                'qubit_count': 0,
+                'gate_count': 0,
+                'circuit_depth': 0,
+                'two_qubit_gates': 0,
+                'optimizations_applied': []
+            }
 
     async def optimize_for_hardware(
             self,
@@ -322,6 +405,9 @@ class ClassiqManager:
         # Hardware-specific constraints
         hardware_constraints = self._get_hardware_constraints(target_backend)
 
+        # Add hardware-aware optimization
+        model.preferences.backend_preferences = self._get_backend_preferences(target_backend)
+
         # Synthesize with hardware optimization
         return await self.synthesize_model(
             model=model,
@@ -336,23 +422,29 @@ class ClassiqManager:
             # Return mock constraints
             return type('Constraints', (), {
                 'max_circuit_depth': 500,
-                'max_gate_count': 10000,
-                'optimization_level': 3
+                'max_circuit_width': 100,
+                'optimization_parameter': 'depth'
             })()
 
         # Default constraints
         constraints = Constraints(
             max_circuit_depth=500,
-            max_gate_count=10000
+            max_circuit_width=100,
+            optimization_parameter=OptimizationParameter.DEPTH
         )
 
         # Adjust for specific backends
         if 'ibm' in backend_name.lower():
             constraints.max_circuit_depth = 400
-            constraints.optimization_level = 3
+            # IBM backends have connectivity constraints
+            constraints.optimization_parameter = OptimizationParameter.DEPTH
         elif 'ionq' in backend_name.lower():
             constraints.max_circuit_depth = 200
-            constraints.max_gate_count = 5000
+            constraints.max_circuit_width = 32
+        elif 'simulator' in backend_name.lower():
+            # Simulators can handle larger circuits
+            constraints.max_circuit_depth = 1000
+            constraints.max_circuit_width = 200
 
         return constraints
 
@@ -387,9 +479,12 @@ class ClassiqManager:
     async def visualize_circuit(self, quantum_program: 'QuantumProgram') -> str:
         """Generate circuit visualization"""
         try:
-            # In actual Classiq, this would generate interactive visualization
-            # For now, return a placeholder
-            return "Circuit visualization URL: https://platform.classiq.io/circuit/visualization"
+            if CLASSIQ_AVAILABLE and hasattr(quantum_program, 'show'):
+                # Use Classiq's built-in visualization
+                return quantum_program.show()
+            else:
+                # Return a placeholder URL
+                return "Circuit visualization not available in mock mode"
         except Exception as e:
             logger.error(f"Error generating visualization: {str(e)}")
             return ""
@@ -452,61 +547,113 @@ class ClassiqManager:
             logger.error(f"Error estimating resources: {str(e)}")
             return {}
 
-    async def compare_synthesis_strategies(
-            self,
-            model: 'Model',
-            strategies: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Compare different synthesis strategies for a model"""
-        results = {}
+        async def compare_synthesis_strategies(
+                self,
+                model: 'Model',
+                strategies: List[Dict[str, Any]]
+        ) -> Dict[str, Any]:
+            """Compare different synthesis strategies for a model"""
+            results = {}
 
-        for strategy in strategies:
-            try:
-                quantum_program = await self.synthesize_model(
-                    model,
-                    optimization_level=strategy.get('optimization_level', 2),
-                    constraints=strategy.get('constraints')
-                )
+            for strategy in strategies:
+                try:
+                    quantum_program = await self.synthesize_model(
+                        model,
+                        optimization_level=strategy.get('optimization_level', 2),
+                        constraints=strategy.get('constraints')
+                    )
 
-                metrics = self._extract_circuit_metrics(quantum_program)
-                results[strategy['name']] = metrics
+                    metrics = self._extract_circuit_metrics(quantum_program)
+                    results[strategy['name']] = metrics
 
-            except Exception as e:
-                logger.error(f"Error with strategy {strategy['name']}: {str(e)}")
-                results[strategy['name']] = {'error': str(e)}
+                except Exception as e:
+                    logger.error(f"Error with strategy {strategy['name']}: {str(e)}")
+                    results[strategy['name']] = {'error': str(e)}
 
-        return results
+            return results
 
-    async def get_platform_status(self) -> Dict[str, Any]:
-        """Get Classiq platform status and capabilities"""
-        return {
-            'connected': self.is_connected(),
-            'api_endpoint': self.api_endpoint,
-            'available_backends': list(self.available_backends.keys()),
-            'cached_models': len(self.cached_models),
-            'synthesis_history': len(self.synthesis_history),
-            'execution_history': len(self.execution_history),
-            'features': {
-                'automatic_synthesis': True,
-                'hardware_optimization': True,
-                'circuit_visualization': True,
-                'error_mitigation': True,
-                'multi_backend_support': True
-            },
-            'optimization_capabilities': [
-                'gate_fusion',
-                'commutation_analysis',
-                'template_matching',
-                'peephole_optimization',
-                'routing_optimization',
-                'error_aware_compilation'
-            ]
-        }
+        async def get_platform_status(self) -> Dict[str, Any]:
+            """Get Classiq platform status and capabilities"""
+            return {
+                'connected': self.is_connected(),
+                'platform_url': settings.classiq_platform_url,
+                'available_backends': list(self.available_backends.keys()),
+                'cached_models': len(self.cached_models),
+                'synthesis_history': len(self.synthesis_history),
+                'execution_history': len(self.execution_history),
+                'features': {
+                    'automatic_synthesis': True,
+                    'hardware_optimization': True,
+                    'circuit_visualization': True,
+                    'error_mitigation': True,
+                    'multi_backend_support': True,
+                    'vqe_support': True,
+                    'qaoa_support': True,
+                    'grover_support': True,
+                    'amplitude_estimation': True,
+                    'phase_estimation': True
+                },
+                'optimization_capabilities': [
+                    'gate_fusion',
+                    'commutation_analysis',
+                    'template_matching',
+                    'peephole_optimization',
+                    'routing_optimization',
+                    'error_aware_compilation',
+                    'hardware_native_gates',
+                    'topological_optimization'
+                ]
+            }
 
-    async def shutdown(self):
-        """Cleanup Classiq manager resources"""
-        logger.info("Shutting down Classiq Manager")
-        # Clear caches
-        self.cached_models.clear()
-        self.synthesis_history.clear()
-        self.execution_history.clear()
+        async def create_vqe_solver(self, hamiltonian: Any, ansatz: Any) -> 'VQESolver':
+            """Create a VQE (Variational Quantum Eigensolver) instance"""
+            if not CLASSIQ_AVAILABLE:
+                raise RuntimeError("Classiq SDK not available")
+
+            return VQESolver(
+                hamiltonian=hamiltonian,
+                ansatz=ansatz,
+                optimizer='COBYLA',
+                max_iterations=100
+            )
+
+        async def create_qaoa_solver(self, problem: Any, p: int = 1) -> 'QAOASolver':
+            """Create a QAOA (Quantum Approximate Optimization Algorithm) instance"""
+            if not CLASSIQ_AVAILABLE:
+                raise RuntimeError("Classiq SDK not available")
+
+            return QAOASolver(
+                problem=problem,
+                p=p,
+                optimizer='COBYLA',
+                max_iterations=100
+            )
+
+        async def create_grover_operator(self, oracle: Any, num_iterations: int) -> 'GroverOperator':
+            """Create a Grover search operator"""
+            if not CLASSIQ_AVAILABLE:
+                raise RuntimeError("Classiq SDK not available")
+
+            return GroverOperator(
+                oracle=oracle,
+                num_iterations=num_iterations
+            )
+
+        async def shutdown(self):
+            """Cleanup Classiq manager resources"""
+            logger.info("Shutting down Classiq Manager")
+
+            # Save any pending models
+            for model_id, model_data in self.cached_models.items():
+                if 'program' in model_data and not model_data.get('saved', False):
+                    try:
+                        save_path = os.path.join(settings.quantum_circuits_dir, f"{model_id}.qmod")
+                        model_data['program'].save(save_path)
+                        model_data['saved'] = True
+                    except Exception as e:
+                        logger.error(f"Error saving model {model_id}: {e}")
+
+            # Clear caches
+            self.cached_models.clear()
+            self.synthesis_history.clear()
+            self.execution_history.clear()

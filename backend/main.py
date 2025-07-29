@@ -14,19 +14,20 @@ from datetime import datetime
 import json
 from typing import Dict, List, Optional
 
-from backend.api import (
+# Fix imports - remove 'backend.' prefix since we're already in backend directory
+from api import (
     prediction_endpoints,
     validation_endpoints,
     data_endpoints,
     quantum_endpoints,
     classiq_endpoints
 )
-from backend.config import settings
-from backend.data_pipeline.real_time_feeds import RealTimeDataManager
-from backend.quantum_models.quantum_simulator import QuantumSimulatorManager
-from backend.utils.performance_monitor import PerformanceMonitor
-from backend.utils.classiq_utils import ClassiqManager
-from backend import managers
+from config import settings
+from data_pipeline.real_time_feeds import RealTimeDataManager
+from quantum_models.quantum_simulator import QuantumSimulatorManager
+from utils.performance_monitor import PerformanceMonitor
+from utils.classiq_utils import ClassiqManager
+import managers
 
 # Configure logging
 logging.basicConfig(
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI):
     await managers.quantum_manager.initialize()
 
     logger.info("🚀 Initializing Classiq integration...")
-    managers.classiq_manager = ClassiqManager(api_key=settings.classiq_api_key)
+    managers.classiq_manager = ClassiqManager()
     await managers.classiq_manager.initialize()
 
     logger.info("📊 Starting performance monitoring...")
@@ -397,7 +398,7 @@ async def api_info():
 if __name__ == "__main__":
     # Run with uvicorn
     uvicorn.run(
-        "backend.main:app",
+        "main:app",  # Changed from "backend.main:app" to "main:app"
         host=settings.host,
         port=settings.port,
         reload=settings.debug,

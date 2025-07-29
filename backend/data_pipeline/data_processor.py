@@ -13,7 +13,7 @@ from datetime import datetime
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
 
-from backend.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
