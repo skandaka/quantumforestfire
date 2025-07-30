@@ -398,12 +398,10 @@ async def api_info():
 if __name__ == "__main__":
     # Run with uvicorn
     uvicorn.run(
-        "main:app",  # Changed from "backend.main:app" to "main:app"
+        "main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
         log_level="info",
-        access_log=True,
-        # Add the project root to the Python path
-        reload_dirs=["backend"]
+        access_log=True
     )

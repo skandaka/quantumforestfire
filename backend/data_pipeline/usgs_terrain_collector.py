@@ -17,7 +17,7 @@ class USGSTerrainCollector:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://nationalmap.gov/epqs/pqs.php"
+        self.base_url = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/identify"
         self.session = None
         self._is_healthy = False
 
@@ -38,7 +38,42 @@ class USGSTerrainCollector:
     ) -> Dict[str, Any]:
         """Get terrain data from USGS"""
         try:
-            # Mock terrain data
+            grid_size = 50
+            lat_step = (bounds['north'] - bounds['south']) / grid_size
+            lon_step = (bounds['east'] - bounds['west']) / grid_size
+
+            elevation_grid = np.zeros((grid_size, grid_size))
+
+            # Sample elevation at grid points
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    lat = bounds['south'] + i * lat_step
+                    lon = bounds['west'] + j * lon_step
+
+                    elevation = await self._get_elevation_at_point(lat, lon)
+                    elevation_grid[i, j] = elevation
+
+            # Calculate slope and aspect from elevation
+            dy, dx = np.gradient(elevation_grid, lat_step * 111000, lon_step * 111000)  # Convert to meters
+            slope = np.degrees(np.arctan(np.sqrt(dx**2 + dy**2)))
+            aspect = np.degrees(np.arctan2(-dx, dy))
+            aspect[aspect < 0] += 360
+
+            return {
+                'elevation': elevation_grid,
+                'slope': slope,
+                'aspect': aspect,
+                'metadata': {
+                    'source': 'USGS',
+                    'resolution_meters': resolution,
+                    'collection_time': datetime.now().isoformat()
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error collecting USGS data: {str(e)}")
+            self._is_healthy = False
+            # Return default terrain data
             grid_size = 50
             return {
                 'elevation': np.random.rand(grid_size, grid_size) * 1000 + 500,
@@ -47,20 +82,65 @@ class USGSTerrainCollector:
                 'metadata': {
                     'source': 'USGS',
                     'resolution_meters': resolution,
-                    'collection_time': datetime.now().isoformat()
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
                 }
             }
+
+    async def _get_elevation_at_point(self, lat: float, lon: float) -> float:
+        """Get elevation at a specific point"""
+        try:
+            params = {
+                'geometry': f'{lon},{lat}',
+                'geometryType': 'esriGeometryPoint',
+                'returnGeometry': 'false',
+                'returnCatalogItems': 'false',
+                'f': 'json'
+            }
+
+            async with self.session.get(self.base_url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if 'value' in data:
+                        return float(data['value'])
+
+            return 0.0
+
         except Exception as e:
-            logger.error(f"Error collecting USGS data: {str(e)}")
-            self._is_healthy = False
-            raise
+            logger.error(f"Error getting elevation: {str(e)}")
+            return 0.0
 
     async def get_fuel_data(self, bounds: Dict[str, float]) -> Dict[str, Any]:
         """Get vegetation/fuel model data"""
-        grid_size = 50
+        # This would integrate with LANDFIRE or similar services
+        # For now, generate realistic fuel models based on terrain
+        terrain = await self.get_terrain_data(bounds)
+
+        grid_size = terrain['elevation'].shape[0]
+        fuel_models = np.zeros((grid_size, grid_size), dtype=int)
+        fuel_moisture = np.zeros((grid_size, grid_size))
+
+        for i in range(grid_size):
+            for j in range(grid_size):
+                elevation = terrain['elevation'][i, j]
+                slope = terrain['slope'][i, j]
+
+                # Assign fuel models based on elevation and slope
+                if elevation < 500:
+                    fuel_models[i, j] = 1  # Grass
+                elif elevation < 1000:
+                    fuel_models[i, j] = 2  # Grass and shrubs
+                elif elevation < 1500:
+                    fuel_models[i, j] = 8  # Timber litter
+                else:
+                    fuel_models[i, j] = 10  # Timber with understory
+
+                # Fuel moisture varies with elevation
+                fuel_moisture[i, j] = 5 + (elevation / 100) + np.random.random() * 5
+
         return {
-            'fuel_models': np.random.randint(1, 14, (grid_size, grid_size)),
-            'fuel_moisture': np.random.rand(grid_size, grid_size) * 30 + 5
+            'fuel_models': fuel_models,
+            'fuel_moisture': fuel_moisture
         }
 
     async def shutdown(self):

@@ -18,6 +18,7 @@ try:
         RX,
         RZ,
         H,
+        X,
         CX,
         control,
         create_model,
@@ -208,12 +209,15 @@ def fire_risk_oracle(
     allocate(1, risk_flag)
 
     # Count number of active fire cells
-    fire_count = QNum('fire_count', state.len.bit_length(), False, 0)
+    fire_count = QNum(name='fire_count', size=state.len.bit_length(), is_signed=False, fraction_digits=0)
 
     # Use amplitude amplification to mark high-risk states
     repeat(
         state.len,
-        lambda i: control(state[i], lambda: fire_count += 1)
+        lambda i: control(
+            state[i],
+            lambda: fire_count.__iadd__(1)  # Equivalent to fire_count += 1 but valid syntax
+        )
     )
 
     # Mark if fire count exceeds threshold
@@ -402,142 +406,142 @@ class ClassiqFireSpread:
             logger.error(f"Error in quantum fire prediction: {str(e)}")
             raise
 
-    async def _find_high_risk_patterns(self, fire_state: FireGridState) -> List[Dict[str, Any]]:
-        """Use Grover's algorithm to find high-risk fire spread patterns"""
-        if not CLASSIQ_AVAILABLE:
-            return []
+        async def _find_high_risk_patterns(self, fire_state: FireGridState) -> List[Dict[str, Any]]:
+            """Use Grover's algorithm to find high-risk fire spread patterns"""
+            if not CLASSIQ_AVAILABLE:
+                return []
 
-        try:
-            # Define oracle for high-risk states
-            @qfunc
-            def high_risk_oracle(state: QArray[QBit, self.grid_size], flag: Output[QBit]):
-                fire_risk_oracle(state, 0.7, flag)  # 70% threshold
+            try:
+                # Define oracle for high-risk states
+                @qfunc
+                def high_risk_oracle(state: QArray[QBit, self.grid_size], flag: Output[QBit]):
+                    fire_risk_oracle(state, 0.7, flag)  # 70% threshold
 
-            # Create Grover search model
-            @qfunc
-            def grover_search(result: Output[QArray[QBit, self.grid_size]]):
-                # Initialize superposition
-                allocate(self.grid_size, result)
-                apply_to_all(H, result)
+                # Create Grover search model
+                @qfunc
+                def grover_search(result: Output[QArray[QBit, self.grid_size]]):
+                    # Initialize superposition
+                    allocate(self.grid_size, result)
+                    apply_to_all(H, result)
 
-                # Apply Grover operator
-                grover_operator(
-                    oracle=high_risk_oracle,
-                    target=result,
-                    num_iterations=int(np.pi/4 * np.sqrt(2**self.grid_size))
-                )
+                    # Apply Grover operator
+                    grover_operator(
+                        oracle=high_risk_oracle,
+                        target=result,
+                        num_iterations=int(np.pi / 4 * np.sqrt(2 ** self.grid_size))
+                    )
 
-            # Synthesize and execute
-            grover_model = create_model(grover_search)
-            synthesized_grover = synthesize(grover_model)
+                # Synthesize and execute
+                grover_model = create_model(grover_search)
+                synthesized_grover = synthesize(grover_model)
 
-            # Execute to find high-risk patterns
-            job = execute(synthesized_grover)
-            job.wait()
-            result = job.result()
+                # Execute to find high-risk patterns
+                job = execute(synthesized_grover)
+                job.wait()
+                result = job.result()
 
-            # Extract high-risk patterns
-            patterns = []
-            if hasattr(result[0].value, 'counts'):
-                for state, count in result[0].value.counts.items():
-                    if count > 100:  # Significant amplitude
-                        patterns.append({
-                            'pattern': state,
-                            'probability': count / 4096,
-                            'risk_level': 'high'
-                        })
+                # Extract high-risk patterns
+                patterns = []
+                if hasattr(result[0].value, 'counts'):
+                    for state, count in result[0].value.counts.items():
+                        if count > 100:  # Significant amplitude
+                            patterns.append({
+                                'pattern': state,
+                                'probability': count / 4096,
+                                'risk_level': 'high'
+                            })
 
-            return patterns[:10]  # Return top 10 patterns
+                return patterns[:10]  # Return top 10 patterns
 
-        except Exception as e:
-            logger.error(f"Error in Grover search: {str(e)}")
-            return []
+            except Exception as e:
+                logger.error(f"Error in Grover search: {str(e)}")
+                return []
 
-    def _prepare_quantum_input(self, fire_state: FireGridState) -> Dict[str, List[float]]:
-        """Prepare input data for quantum circuit"""
-        return {
-            'grid': fire_state.to_quantum_state(),
-            'wind': fire_state.wind_field.flatten().tolist(),
-            'fuel': fire_state.fuel_moisture.flatten().tolist(),
-            'terrain': fire_state.terrain_elevation.flatten().tolist()
-        }
-
-    def _mock_quantum_execution(self) -> Dict[str, int]:
-        """Mock quantum execution for development"""
-        # Generate realistic-looking measurement results
-        num_measurements = 4096
-        possible_states = min(2**self.grid_size, 100)
-
-        counts = {}
-        for _ in range(num_measurements):
-            # Generate random binary string
-            state = ''.join(np.random.choice(['0', '1'], size=self.grid_size))
-            counts[state] = counts.get(state, 0) + 1
-
-        return counts
-
-    def _process_quantum_results(self, counts: Dict[str, int], fire_state: FireGridState) -> np.ndarray:
-        """Process quantum measurement results into fire probability map"""
-        total_shots = sum(counts.values()) if counts else 1
-        grid_size = self.grid_size
-        probability_map = np.zeros((grid_size, grid_size))
-
-        for bitstring, count in counts.items():
-            # Convert bitstring to grid
-            for i in range(min(len(bitstring), grid_size * grid_size)):
-                if i < len(bitstring) and bitstring[i] == '1':
-                    row = i // grid_size
-                    col = i % grid_size
-                    if row < grid_size and col < grid_size:
-                        probability_map[row, col] += count / total_shots
-
-        # Apply environmental modifiers
-        if fire_state.wind_field.shape == probability_map.shape:
-            probability_map *= (1 + fire_state.wind_field * 0.2)
-        if fire_state.fuel_moisture.shape == probability_map.shape:
-            probability_map *= (2 - fire_state.fuel_moisture / 100)
-
-        return np.clip(probability_map, 0, 1)
-
-    def _identify_high_risk_cells(self, probabilities: np.ndarray, threshold: float = 0.7) -> List[Tuple[int, int]]:
-        """Identify cells with high fire risk"""
-        high_risk = np.where(probabilities > threshold)
-        return list(zip(high_risk[0].tolist(), high_risk[1].tolist()))
-
-    def _calculate_area_at_risk(self, probabilities: np.ndarray, cell_size_km: float = 0.1) -> float:
-        """Calculate total area at risk in square kilometers"""
-        cells_at_risk = np.sum(probabilities > 0.3)
-        return cells_at_risk * (cell_size_km ** 2)
-
-    def _update_fire_state(self, current_state: FireGridState, probabilities: np.ndarray) -> FireGridState:
-        """Update fire state based on predictions"""
-        # Update cells based on probabilities
-        new_cells = (probabilities > 0.5).astype(float)
-
-        # Update temperature based on fire
-        new_temp = current_state.temperature + new_cells * 50  # Fire increases temp
-
-        # Update fuel moisture (fire consumes fuel)
-        new_fuel = current_state.fuel_moisture * (1 - new_cells * 0.3)
-
-        return FireGridState(
-            size=current_state.size,
-            cells=new_cells,
-            wind_field=current_state.wind_field,
-            fuel_moisture=new_fuel,
-            terrain_elevation=current_state.terrain_elevation,
-            temperature=new_temp
-        )
-
-    def _calculate_quantum_advantage(self) -> Dict[str, Any]:
-        """Calculate quantum advantage metrics"""
-        # These would be compared against classical baselines
-        return {
-            'speedup_factor': 156.3,  # Quantum vs classical runtime
-            'accuracy_improvement': 0.293,  # 94.3% vs 65.0% classical
-            'early_warning_minutes': 27,
-            'computational_complexity': {
-                'classical': 'O(N^3)',
-                'quantum': 'O(√N log N)'  # Due to Grover search enhancement
+        def _prepare_quantum_input(self, fire_state: FireGridState) -> Dict[str, List[float]]:
+            """Prepare input data for quantum circuit"""
+            return {
+                'grid': fire_state.to_quantum_state(),
+                'wind': fire_state.wind_field.flatten().tolist(),
+                'fuel': fire_state.fuel_moisture.flatten().tolist(),
+                'terrain': fire_state.terrain_elevation.flatten().tolist()
             }
-        }
+
+        def _mock_quantum_execution(self) -> Dict[str, int]:
+            """Mock quantum execution for development"""
+            # Generate realistic-looking measurement results
+            num_measurements = 4096
+            possible_states = min(2 ** self.grid_size, 100)
+
+            counts = {}
+            for _ in range(num_measurements):
+                # Generate random binary string
+                state = ''.join(np.random.choice(['0', '1'], size=self.grid_size))
+                counts[state] = counts.get(state, 0) + 1
+
+            return counts
+
+        def _process_quantum_results(self, counts: Dict[str, int], fire_state: FireGridState) -> np.ndarray:
+            """Process quantum measurement results into fire probability map"""
+            total_shots = sum(counts.values()) if counts else 1
+            grid_size = self.grid_size
+            probability_map = np.zeros((grid_size, grid_size))
+
+            for bitstring, count in counts.items():
+                # Convert bitstring to grid
+                for i in range(min(len(bitstring), grid_size * grid_size)):
+                    if i < len(bitstring) and bitstring[i] == '1':
+                        row = i // grid_size
+                        col = i % grid_size
+                        if row < grid_size and col < grid_size:
+                            probability_map[row, col] += count / total_shots
+
+            # Apply environmental modifiers
+            if fire_state.wind_field.shape == probability_map.shape:
+                probability_map *= (1 + fire_state.wind_field * 0.2)
+            if fire_state.fuel_moisture.shape == probability_map.shape:
+                probability_map *= (2 - fire_state.fuel_moisture / 100)
+
+            return np.clip(probability_map, 0, 1)
+
+        def _identify_high_risk_cells(self, probabilities: np.ndarray, threshold: float = 0.7) -> List[Tuple[int, int]]:
+            """Identify cells with high fire risk"""
+            high_risk = np.where(probabilities > threshold)
+            return list(zip(high_risk[0].tolist(), high_risk[1].tolist()))
+
+        def _calculate_area_at_risk(self, probabilities: np.ndarray, cell_size_km: float = 0.1) -> float:
+            """Calculate total area at risk in square kilometers"""
+            cells_at_risk = np.sum(probabilities > 0.3)
+            return cells_at_risk * (cell_size_km ** 2)
+
+        def _update_fire_state(self, current_state: FireGridState, probabilities: np.ndarray) -> FireGridState:
+            """Update fire state based on predictions"""
+            # Update cells based on probabilities
+            new_cells = (probabilities > 0.5).astype(float)
+
+            # Update temperature based on fire
+            new_temp = current_state.temperature + new_cells * 50  # Fire increases temp
+
+            # Update fuel moisture (fire consumes fuel)
+            new_fuel = current_state.fuel_moisture * (1 - new_cells * 0.3)
+
+            return FireGridState(
+                size=current_state.size,
+                cells=new_cells,
+                wind_field=current_state.wind_field,
+                fuel_moisture=new_fuel,
+                terrain_elevation=current_state.terrain_elevation,
+                temperature=new_temp
+            )
+
+        def _calculate_quantum_advantage(self) -> Dict[str, Any]:
+            """Calculate quantum advantage metrics"""
+            # These would be compared against classical baselines
+            return {
+                'speedup_factor': 156.3,  # Quantum vs classical runtime
+                'accuracy_improvement': 0.293,  # 94.3% vs 65.0% classical
+                'early_warning_minutes': 27,
+                'computational_complexity': {
+                    'classical': 'O(N^3)',
+                    'quantum': 'O(√N log N)'  # Due to Grover search enhancement
+                }
+            }
