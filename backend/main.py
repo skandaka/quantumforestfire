@@ -35,7 +35,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
+# Initialize managers module first
+managers.data_manager = None
+managers.quantum_manager = None
+managers.classiq_manager = None
+managers.performance_monitor = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

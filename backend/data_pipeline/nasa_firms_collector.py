@@ -9,6 +9,10 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import asyncio
 
+from config import settings
+from data_pipeline.noaa_weather_collector import NOAAWeatherCollector
+from data_pipeline.usgs_terrain_collector import USGSTerrainCollector
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,54 +26,77 @@ class NASAFIRMSCollector:
         self._is_healthy = False
 
     async def initialize(self):
-        """Initialize the collector"""
-        self.session = aiohttp.ClientSession()
-        self._is_healthy = True
-        logger.info("NASA FIRMS collector initialized")
+        """Initialize all data collectors and connections"""
+        logger.info("Initializing Real-Time Data Manager...")
+
+        # Initialize Redis for caching
+        try:
+            import redis.asyncio as redis
+            self.redis_client = await redis.from_url(
+                settings.redis_url,
+                password=settings.redis_password,
+                decode_responses=True
+            )
+            # Test connection
+            await self.redis_client.ping()
+            self.redis_available = True
+            logger.info("Successfully connected to Redis")
+        except Exception as e:
+            logger.warning(f"Redis not available: {e}. Running without cache.")
+            self.redis_available = False
+            self.redis_client = None
+
+        # Initialize data collectors
+        self.collectors['nasa_firms'] = NASAFIRMSCollector(settings.nasa_firms_api_key or 'demo_key')
+        self.collectors['noaa_weather'] = NOAAWeatherCollector(settings.noaa_api_key or 'demo_key')
+        self.collectors['usgs_terrain'] = USGSTerrainCollector(settings.usgs_api_key or 'demo_key')
+
+        # Initialize each collector
+        for name, collector in self.collectors.items():
+            await collector.initialize()
+            logger.info(f"Initialized {name} collector")
+
+        self.is_running = True
+        logger.info("Real-Time Data Manager initialized successfully")
 
     def is_healthy(self) -> bool:
         """Check if collector is healthy"""
         return self._is_healthy and self.session is not None
 
     async def get_active_fires(
-        self,
-        bounds: Dict[str, float],
-        start_date: datetime,
-        end_date: datetime,
-        confidence_threshold: float = 0.7
+            self,
+            bounds: Dict[str, float],
+            start_date: datetime,
+            end_date: datetime,
+            confidence_threshold: float = 0.7
     ) -> Dict[str, Any]:
         """Get active fire data from NASA FIRMS"""
         try:
-            # Format dates for API
-            date_format = "%Y-%m-%d"
-
-            # Build API parameters
-            params = {
-                'source': 'modis',
-                'country': 'USA',
-                'date': f"{start_date.strftime(date_format)},{end_date.strftime(date_format)}",
-                'format': 'json'
-            }
-
-            # Add bounds
+            # Build API URL
             url = f"{self.base_url}/csv/{self.api_key}/MODIS_NRT/{bounds['west']},{bounds['south']},{bounds['east']},{bounds['north']}/1"
 
             async with self.session.get(url) as response:
                 if response.status == 200:
-                    data = await response.json()
+                    # NASA FIRMS returns CSV, not JSON
+                    csv_text = await response.text()
 
-                    # Filter by confidence
+                    # Parse CSV
+                    import csv
+                    from io import StringIO
+
                     active_fires = []
-                    for fire in data:
-                        if float(fire.get('confidence', 0)) >= confidence_threshold * 100:
+                    reader = csv.DictReader(StringIO(csv_text))
+
+                    for row in reader:
+                        if float(row.get('confidence', 0)) >= confidence_threshold * 100:
                             active_fires.append({
-                                'latitude': float(fire['latitude']),
-                                'longitude': float(fire['longitude']),
-                                'brightness_temperature': float(fire.get('brightness', 0)),
-                                'frp': float(fire.get('frp', 0)),
-                                'confidence': float(fire.get('confidence', 0)) / 100,
-                                'detection_time': fire.get('acq_date') + 'T' + fire.get('acq_time', '00:00'),
-                                'satellite': fire.get('satellite', 'MODIS')
+                                'latitude': float(row['latitude']),
+                                'longitude': float(row['longitude']),
+                                'brightness_temperature': float(row.get('brightness', 0)),
+                                'frp': float(row.get('frp', 0)),
+                                'confidence': float(row.get('confidence', 0)) / 100,
+                                'detection_time': row.get('acq_date') + 'T' + row.get('acq_time', '00:00'),
+                                'satellite': row.get('satellite', 'MODIS')
                             })
 
                     return {
@@ -83,7 +110,6 @@ class NASAFIRMSCollector:
                     }
                 else:
                     logger.error(f"NASA FIRMS API returned status {response.status}")
-                    # Return empty data instead of mock
                     return {
                         'active_fires': [],
                         'metadata': {

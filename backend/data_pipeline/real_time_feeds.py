@@ -67,17 +67,26 @@ class RealTimeDataManager:
         """Initialize all data collectors and connections"""
         logger.info("Initializing Real-Time Data Manager...")
 
-        # Initialize Redis for caching
-        self.redis_client = await redis.from_url(
-            settings.redis_url,
-            password=settings.redis_password,
-            decode_responses=True
-        )
+        # Initialize Redis for caching (optional)
+        try:
+            self.redis_client = redis.from_url(
+                settings.redis_url,
+                password=settings.redis_password,
+                decode_responses=True
+            )
+            # Test connection synchronously
+            self.redis_client.ping()
+            self.redis_available = True
+            logger.info("Successfully connected to Redis")
+        except Exception as e:
+            logger.warning(f"Redis not available: {e}. Running without cache.")
+            self.redis_client = None
+            self.redis_available = False
 
         # Initialize data collectors
-        self.collectors['nasa_firms'] = NASAFIRMSCollector(settings.nasa_firms_api_key)
-        self.collectors['noaa_weather'] = NOAAWeatherCollector(settings.noaa_api_key)
-        self.collectors['usgs_terrain'] = USGSTerrainCollector(settings.usgs_api_key)
+        self.collectors['nasa_firms'] = NASAFIRMSCollector(settings.nasa_firms_api_key or "demo_key")
+        self.collectors['noaa_weather'] = NOAAWeatherCollector(settings.noaa_api_key or "demo_key")
+        self.collectors['usgs_terrain'] = USGSTerrainCollector(settings.usgs_api_key or "demo_key")
 
         # Initialize each collector
         for name, collector in self.collectors.items():

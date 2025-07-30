@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
 async def get_data_manager():
     """Get data manager instance"""
-    from main import data_manager
-    if not data_manager:
+    import managers
+    if not managers.data_manager:
         raise HTTPException(status_code=503, detail="Data system not initialized")
-    return data_manager
+    return managers.data_manager
 
 
 @router.get("/fires")

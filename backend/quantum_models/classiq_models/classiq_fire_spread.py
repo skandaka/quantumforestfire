@@ -9,46 +9,41 @@ from typing import Any, Dict, List, Tuple, Optional
 import numpy as np
 
 # Classiq imports with proper SDK usage
+# Classiq imports with proper SDK usage
 try:
     from classiq import (
-    X,
-    X,
         QArray,
         QBit,
         QNum,
-        RY,
-        RX,
-        RZ,
+        Output,
+        qfunc,
         H,
         X,
         CX,
+        RX,
+        RY,
+        RZ,
         control,
-        create_model,
-        qfunc,
         repeat,
-        synthesize,
-        Output,
         apply_to_all,
-        within_apply,
         allocate,
-        invert,
-        QCallable,
-        bind,
-        U,
-        prepare_amplitudes,
-        grover_operator,
-        amplitude_amplification
+        within_apply,
+        bind
     )
+    from classiq import Model, create_model, synthesize, execute
+    from classiq import set_constraints, set_preferences
+    from classiq.interface.generator.expressions.arithmetic import QInt
     from classiq.interface.backend.backend_preferences import ClassiqBackendPreferences
-    from classiq.interface.generator.expressions import QParam
-    from classiq.interface.generator.model import Constraints, Preferences
-    from classiq.execution import execute, ExecutionPreferences, set_execution_preferences
-    from classiq.synthesis import set_constraints, set_preferences
+    from classiq.execution import ExecutionPreferences
+
     CLASSIQ_AVAILABLE = True
-except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.info("Classiq SDK loaded successfully for fire spread model")
+except ImportError as e:
     CLASSIQ_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning("Classiq SDK not available - using mock mode")
+    logger.warning(f"Classiq SDK not available for fire spread model: {e}")
+    # Mock implementations...
 
 logger = logging.getLogger(__name__)
 

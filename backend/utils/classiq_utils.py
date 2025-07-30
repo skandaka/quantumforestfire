@@ -7,54 +7,115 @@ import logging
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import asyncio
+
+"""
+Classiq Platform Utilities and Manager
+Location: backend/utils/classiq_utils.py
+"""
+
+import logging
+from typing import Dict, List, Any, Optional, Union
+from datetime import datetime
+import asyncio
 import json
 from dataclasses import dataclass
 from enum import Enum
 import os
 
-# Classiq SDK imports
+# Classiq SDK imports - Fixed version
 try:
-    from classiq import (
-        authenticate,
-        Model,
-        synthesize,
-        execute,
-        create_model,
-        QuantumProgram,
-        ExecutionPreferences,
-        Constraints,
-        OptimizationParameter,
-        show,
-        ClassiqBackendPreferences,
-        BackendServiceProvider,
-        VQESolver,
-        QAOASolver,
-        GroverOperator,
-        AmplitudeEstimation,
-        PhaseEstimation,
-        set_quantum_program_execution_preferences,
-        SerializedQuantumProgram
-    )
-    from classiq.execution import ExecutionDetails, ExecutionJob
-    from classiq.synthesis import SerializedModel
-    from classiq.interface.backend.backend_preferences import ClassiqSimulatorBackendNames
-    from classiq.interface.generator.model import ModelDesigner
-    CLASSIQ_AVAILABLE = True
-except ImportError:
+    import classiq
+    from classiq import authenticate, ClassiqSimulatorBackendNames, set_quantum_program_execution_preferences, \
+        ExecutionJob
+    from classiq.interface.generator.quantum_program import QuantumProgram
+    from classiq.interface.backend.backend_preferences import ClassiqBackendPreferences
+    from classiq.execution import ExecutionPreferences
+    from classiq import Model, synthesize, execute, create_model
+    from classiq import set_constraints, set_preferences
+    from classiq.interface.generator.model.constraints import Constraints
+    from classiq.interface.generator.model.preferences import Preferences, OptimizationParameter
+
+    # Test authentication immediately
+    try:
+        # This will use the stored credentials from authenticate()
+        from classiq import get_authentication_token
+
+        token = get_authentication_token()
+        if token:
+            CLASSIQ_AVAILABLE = True
+            logger = logging.getLogger(__name__)
+            logger.info("Classiq SDK authenticated successfully")
+        else:
+            CLASSIQ_AVAILABLE = False
+            logger = logging.getLogger(__name__)
+            logger.warning("Classiq SDK available but not authenticated")
+    except Exception as e:
+        CLASSIQ_AVAILABLE = False
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Classiq authentication check failed: {e}")
+
+except ImportError as e:
     CLASSIQ_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.error(f"Classiq SDK import failed: {e}")
+
+
     # Mock classes for development
-    class Model: pass
-    class QuantumProgram: pass
-    class ExecutionPreferences: pass
-    class Constraints: pass
-    class ClassiqBackendPreferences: pass
-    class BackendServiceProvider: pass
-    class ExecutionDetails: pass
-    class SerializedModel: pass
-    class ModelDesigner: pass
-    class ClassiqSimulatorBackendNames:
-        SIMULATOR = "simulator"
-        SIMULATOR_STATEVECTOR = "simulator_statevector"
+    class Model:
+        pass
+
+
+    class QuantumProgram:
+        pass
+
+
+    class ExecutionPreferences:
+        pass
+
+
+    class Constraints:
+        pass
+
+
+    class ClassiqBackendPreferences:
+        pass
+
+
+    class Preferences:
+        pass
+
+
+    class OptimizationParameter:
+        DEPTH = "depth"
+        WIDTH = "width"
+
+
+    def authenticate():
+        pass
+
+
+    def synthesize(model):
+        return None
+
+
+    def execute(program):
+        return None
+
+
+    def create_model():
+        return Model()
+
+
+    def set_constraints(model, constraints):
+        pass
+
+
+    def set_preferences(model, preferences):
+        pass
+
+
+    def get_authentication_token():
+        return None
 
 from config import settings
 
@@ -104,16 +165,30 @@ class ClassiqManager:
 
             if not CLASSIQ_AVAILABLE:
                 logger.warning("Classiq SDK not available - running in mock mode")
+                logger.info("To use Classiq, ensure you have:")
+                logger.info("1. Installed classiq SDK: pip install classiq")
+                logger.info("2. Run authentication: python -m classiq authenticate")
                 self.is_authenticated = False
                 return
 
-            # Authenticate with Classiq platform
+            # Check if already authenticated
             try:
-                authenticate()
-                self.is_authenticated = True
+                from classiq import get_authentication_token
+                token = get_authentication_token()
+                if token:
+                    self.is_authenticated = True
+                    logger.info("Classiq already authenticated")
+                else:
+                    # Try to authenticate
+                    logger.info("Attempting Classiq authentication...")
+                    authenticate()
+                    self.is_authenticated = True
+                    logger.info("Classiq authentication successful")
             except Exception as auth_error:
-                logger.warning(f"Classiq authentication required: {auth_error}")
+                logger.warning(f"Classiq authentication failed: {auth_error}")
+                logger.info("Please run: python -m classiq authenticate")
                 self.is_authenticated = False
+                return
 
             # Get available backends
             await self._discover_backends()
