@@ -13,12 +13,12 @@ import json
 import asyncio
 from uuid import uuid4
 
-from quantum_models.quantum_simulator import QuantumSimulatorManager
-from data_pipeline.real_time_feeds import RealTimeDataManager
-from utils.performance_monitor import quantum_performance_tracker
-from utils.paradise_fire_demo import ParadiseFireDemo
-from config import settings
-import managers
+from backend.quantum_models.quantum_simulator import QuantumSimulatorManager
+from backend.data_pipeline.real_time_feeds import RealTimeDataManager
+from backend.utils.performance_monitor import quantum_performance_tracker
+from backend.utils.paradise_fire_demo import ParadiseFireDemo
+from backend.config import settings
+from backend import managers
 
 logger = logging.getLogger(__name__)
 
