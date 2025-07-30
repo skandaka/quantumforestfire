@@ -4,6 +4,8 @@ Location: backend/data_pipeline/real_time_feeds.py
 """
 
 import asyncio
+import os
+
 import aiohttp
 import logging
 from typing import Dict, List, Any, Optional, Tuple
