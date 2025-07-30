@@ -8,8 +8,8 @@ from typing import Dict, Any, List
 from datetime import datetime
 import logging
 
-from ..quantum_models.quantum_simulator import QuantumSimulatorManager
-from ..utils.performance_monitor import quantum_performance_tracker
+from quantum_models.quantum_simulator import QuantumSimulatorManager
+from utils.performance_monitor import quantum_performance_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ router = APIRouter()
 
 async def get_quantum_manager():
     """Get quantum manager instance"""
-    from ..main import quantum_manager
+    from main import quantum_manager
     if not quantum_manager:
         raise HTTPException(status_code=503, detail="Quantum system not initialized")
     return quantum_manager

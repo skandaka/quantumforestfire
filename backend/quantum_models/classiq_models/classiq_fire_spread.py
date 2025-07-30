@@ -11,6 +11,8 @@ import numpy as np
 # Classiq imports with proper SDK usage
 try:
     from classiq import (
+    X,
+    X,
         QArray,
         QBit,
         QNum,

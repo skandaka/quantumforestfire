@@ -32,7 +32,6 @@ try:
         GroverOperator,
         AmplitudeEstimation,
         PhaseEstimation,
-        get_authentication_token,
         set_quantum_program_execution_preferences,
         SerializedQuantumProgram
     )
@@ -57,7 +56,7 @@ except ImportError:
         SIMULATOR = "simulator"
         SIMULATOR_STATEVECTOR = "simulator_statevector"
 
-from ..config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +96,6 @@ class ClassiqManager:
         self.cached_models: Dict[str, Dict[str, Any]] = {}
         self.synthesis_history: List[Dict[str, Any]] = []
         self.execution_history: List[Dict[str, Any]] = []
-        self._auth_token = None
 
     async def initialize(self):
         """Initialize Classiq connection and authentication"""
@@ -110,21 +108,11 @@ class ClassiqManager:
                 return
 
             # Authenticate with Classiq platform
-            # For production, you would use proper authentication credentials
-            # The authenticate() function opens a browser for login if needed
             try:
-                # Check if we have cached credentials
-                self._auth_token = get_authentication_token()
-                if self._auth_token:
-                    self.is_authenticated = True
-                else:
-                    # Initiate authentication - this will open a browser
-                    authenticate()
-                    self._auth_token = get_authentication_token()
-                    self.is_authenticated = True
+                authenticate()
+                self.is_authenticated = True
             except Exception as auth_error:
                 logger.warning(f"Classiq authentication required: {auth_error}")
-                # In production, you might want to handle this differently
                 self.is_authenticated = False
 
             # Get available backends
@@ -547,113 +535,113 @@ class ClassiqManager:
             logger.error(f"Error estimating resources: {str(e)}")
             return {}
 
-        async def compare_synthesis_strategies(
-                self,
-                model: 'Model',
-                strategies: List[Dict[str, Any]]
-        ) -> Dict[str, Any]:
-            """Compare different synthesis strategies for a model"""
-            results = {}
+    async def compare_synthesis_strategies(
+            self,
+            model: 'Model',
+            strategies: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Compare different synthesis strategies for a model"""
+        results = {}
 
-            for strategy in strategies:
+        for strategy in strategies:
+            try:
+                quantum_program = await self.synthesize_model(
+                    model,
+                    optimization_level=strategy.get('optimization_level', 2),
+                    constraints=strategy.get('constraints')
+                )
+
+                metrics = self._extract_circuit_metrics(quantum_program)
+                results[strategy['name']] = metrics
+
+            except Exception as e:
+                logger.error(f"Error with strategy {strategy['name']}: {str(e)}")
+                results[strategy['name']] = {'error': str(e)}
+
+        return results
+
+    async def get_platform_status(self) -> Dict[str, Any]:
+        """Get Classiq platform status and capabilities"""
+        return {
+            'connected': self.is_connected(),
+            'platform_url': settings.classiq_platform_url,
+            'available_backends': list(self.available_backends.keys()),
+            'cached_models': len(self.cached_models),
+            'synthesis_history': len(self.synthesis_history),
+            'execution_history': len(self.execution_history),
+            'features': {
+                'automatic_synthesis': True,
+                'hardware_optimization': True,
+                'circuit_visualization': True,
+                'error_mitigation': True,
+                'multi_backend_support': True,
+                'vqe_support': True,
+                'qaoa_support': True,
+                'grover_support': True,
+                'amplitude_estimation': True,
+                'phase_estimation': True
+            },
+            'optimization_capabilities': [
+                'gate_fusion',
+                'commutation_analysis',
+                'template_matching',
+                'peephole_optimization',
+                'routing_optimization',
+                'error_aware_compilation',
+                'hardware_native_gates',
+                'topological_optimization'
+            ]
+        }
+
+    async def create_vqe_solver(self, hamiltonian: Any, ansatz: Any) -> 'VQESolver':
+        """Create a VQE (Variational Quantum Eigensolver) instance"""
+        if not CLASSIQ_AVAILABLE:
+            raise RuntimeError("Classiq SDK not available")
+
+        return VQESolver(
+            hamiltonian=hamiltonian,
+            ansatz=ansatz,
+            optimizer='COBYLA',
+            max_iterations=100
+        )
+
+    async def create_qaoa_solver(self, problem: Any, p: int = 1) -> 'QAOASolver':
+        """Create a QAOA (Quantum Approximate Optimization Algorithm) instance"""
+        if not CLASSIQ_AVAILABLE:
+            raise RuntimeError("Classiq SDK not available")
+
+        return QAOASolver(
+            problem=problem,
+            p=p,
+            optimizer='COBYLA',
+            max_iterations=100
+        )
+
+    async def create_grover_operator(self, oracle: Any, num_iterations: int) -> 'GroverOperator':
+        """Create a Grover search operator"""
+        if not CLASSIQ_AVAILABLE:
+            raise RuntimeError("Classiq SDK not available")
+
+        return GroverOperator(
+            oracle=oracle,
+            num_iterations=num_iterations
+        )
+
+    async def shutdown(self):
+        """Cleanup Classiq manager resources"""
+        logger.info("Shutting down Classiq Manager")
+
+        # Save any pending models
+        for model_id, model_data in self.cached_models.items():
+            if 'program' in model_data and not model_data.get('saved', False):
                 try:
-                    quantum_program = await self.synthesize_model(
-                        model,
-                        optimization_level=strategy.get('optimization_level', 2),
-                        constraints=strategy.get('constraints')
-                    )
-
-                    metrics = self._extract_circuit_metrics(quantum_program)
-                    results[strategy['name']] = metrics
-
+                    save_path = os.path.join(settings.quantum_circuits_dir, f"{model_id}.qmod")
+                    model_data['program'].save(save_path)
+                    model_data['saved'] = True
                 except Exception as e:
-                    logger.error(f"Error with strategy {strategy['name']}: {str(e)}")
-                    results[strategy['name']] = {'error': str(e)}
+                    logger.error(f"Error saving model {model_id}: {e}")
 
-            return results
-
-        async def get_platform_status(self) -> Dict[str, Any]:
-            """Get Classiq platform status and capabilities"""
-            return {
-                'connected': self.is_connected(),
-                'platform_url': settings.classiq_platform_url,
-                'available_backends': list(self.available_backends.keys()),
-                'cached_models': len(self.cached_models),
-                'synthesis_history': len(self.synthesis_history),
-                'execution_history': len(self.execution_history),
-                'features': {
-                    'automatic_synthesis': True,
-                    'hardware_optimization': True,
-                    'circuit_visualization': True,
-                    'error_mitigation': True,
-                    'multi_backend_support': True,
-                    'vqe_support': True,
-                    'qaoa_support': True,
-                    'grover_support': True,
-                    'amplitude_estimation': True,
-                    'phase_estimation': True
-                },
-                'optimization_capabilities': [
-                    'gate_fusion',
-                    'commutation_analysis',
-                    'template_matching',
-                    'peephole_optimization',
-                    'routing_optimization',
-                    'error_aware_compilation',
-                    'hardware_native_gates',
-                    'topological_optimization'
-                ]
-            }
-
-        async def create_vqe_solver(self, hamiltonian: Any, ansatz: Any) -> 'VQESolver':
-            """Create a VQE (Variational Quantum Eigensolver) instance"""
-            if not CLASSIQ_AVAILABLE:
-                raise RuntimeError("Classiq SDK not available")
-
-            return VQESolver(
-                hamiltonian=hamiltonian,
-                ansatz=ansatz,
-                optimizer='COBYLA',
-                max_iterations=100
-            )
-
-        async def create_qaoa_solver(self, problem: Any, p: int = 1) -> 'QAOASolver':
-            """Create a QAOA (Quantum Approximate Optimization Algorithm) instance"""
-            if not CLASSIQ_AVAILABLE:
-                raise RuntimeError("Classiq SDK not available")
-
-            return QAOASolver(
-                problem=problem,
-                p=p,
-                optimizer='COBYLA',
-                max_iterations=100
-            )
-
-        async def create_grover_operator(self, oracle: Any, num_iterations: int) -> 'GroverOperator':
-            """Create a Grover search operator"""
-            if not CLASSIQ_AVAILABLE:
-                raise RuntimeError("Classiq SDK not available")
-
-            return GroverOperator(
-                oracle=oracle,
-                num_iterations=num_iterations
-            )
-
-        async def shutdown(self):
-            """Cleanup Classiq manager resources"""
-            logger.info("Shutting down Classiq Manager")
-
-            # Save any pending models
-            for model_id, model_data in self.cached_models.items():
-                if 'program' in model_data and not model_data.get('saved', False):
-                    try:
-                        save_path = os.path.join(settings.quantum_circuits_dir, f"{model_id}.qmod")
-                        model_data['program'].save(save_path)
-                        model_data['saved'] = True
-                    except Exception as e:
-                        logger.error(f"Error saving model {model_id}: {e}")
-
-            # Clear caches
-            self.cached_models.clear()
-            self.synthesis_history.clear()
-            self.execution_history.clear()
+        # Clear caches
+        self.cached_models.clear()
+        self.synthesis_history.clear()
+        self.execution_history.clear()

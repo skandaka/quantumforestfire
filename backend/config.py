@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     ibm_quantum_hub: str = Field(default="ibm-q", alias="IBM_QUANTUM_HUB")
     ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
     ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
+    classiq_api_key: Optional[str] = Field(default=None, alias="CLASSIQ_API_KEY")
+
 
     # Classiq Configuration (No API key needed - uses SDK authentication)
     classiq_platform_url: str = Field(
@@ -237,12 +239,11 @@ class Settings(BaseSettings):
         """Check if running in development"""
         return self.environment == "development"
 
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "case_sensitive": False,
-        "populate_by_name": True
-    }
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+        extra = "ignore"
 
 
 # Create global settings instance

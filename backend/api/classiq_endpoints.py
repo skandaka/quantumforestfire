@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 import logging
 
-from ..utils.classiq_utils import ClassiqManager
+from utils.classiq_utils import ClassiqManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ router = APIRouter()
 
 async def get_classiq_manager():
     """Get Classiq manager instance"""
-    from ..main import classiq_manager
+    from main import classiq_manager
     if not classiq_manager:
         raise HTTPException(status_code=503, detail="Classiq integration not initialized")
     return classiq_manager

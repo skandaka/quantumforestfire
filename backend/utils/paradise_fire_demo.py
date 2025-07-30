@@ -8,8 +8,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import numpy as np
 
-from ..quantum_models.quantum_simulator import QuantumSimulatorManager
-from ..config import settings
+from quantum_models.quantum_simulator import QuantumSimulatorManager
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class ParadiseFireDemo:
 
         if ember_model:
             # Prepare atmospheric conditions
-            from ..quantum_models.classiq_models.classiq_ember_dynamics import AtmosphericConditions
+            from quantum_models.classiq_models.classiq_ember_dynamics import AtmosphericConditions
 
             conditions = AtmosphericConditions(
                 wind_field=self._generate_canyon_wind_field(),
@@ -133,7 +133,7 @@ class ParadiseFireDemo:
             fire_spread_result = None
 
             if fire_spread_model:
-                from ..quantum_models.classiq_models.classiq_fire_spread import FireGridState
+                from quantum_models.classiq_models.classiq_fire_spread import FireGridState
 
                 fire_state = FireGridState(
                     size=50,

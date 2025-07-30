@@ -15,7 +15,7 @@ import numpy as np
 from prometheus_client import Counter, Histogram, Gauge, Summary
 import redis.asyncio as redis
 
-from ..config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

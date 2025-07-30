@@ -21,7 +21,7 @@ def fix_imports_in_file(filepath):
         (r'from backend\.quantum_models', 'from quantum_models'),
         (r'from backend\.utils', 'from utils'),
         (r'from backend\.physics_models', 'from physics_models'),
-        (r'from backend import managers', 'import managers'),
+        (r'import managers', 'import managers'),
         (r'import backend\.', 'import '),
     ]
 

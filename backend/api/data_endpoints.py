@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
 
-from ..data_pipeline.real_time_feeds import RealTimeDataManager
+from data_pipeline.real_time_feeds import RealTimeDataManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ router = APIRouter()
 
 async def get_data_manager():
     """Get data manager instance"""
-    from ..main import data_manager
+    from main import data_manager
     if not data_manager:
         raise HTTPException(status_code=503, detail="Data system not initialized")
     return data_manager

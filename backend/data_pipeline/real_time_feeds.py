@@ -16,7 +16,7 @@ from collections import defaultdict
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
 
-from ..config import settings
+from config import settings
 from .nasa_firms_collector import NASAFIRMSCollector
 from .noaa_weather_collector import NOAAWeatherCollector
 from .usgs_terrain_collector import USGSTerrainCollector
@@ -25,6 +25,8 @@ from .data_validation import DataValidator
 
 logger = logging.getLogger(__name__)
 
+import redis
+from redis.exceptions import ConnectionError
 
 class RealTimeDataManager:
     """Manages real-time data collection and streaming for fire prediction"""
@@ -44,6 +46,20 @@ class RealTimeDataManager:
             'last_update': None,
             'data_points': 0
         }
+        try:
+            self.redis_client = redis.Redis(
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                decode_responses=True,
+                socket_connect_timeout=5,
+                retry_on_timeout=True
+            )
+            self.redis_client.ping()  # Test connection
+            self.redis_available = True
+            logger.info("Successfully connected to Redis")
+        except ConnectionError as e:
+            logger.warning(f"Redis not available: {e}. Some features will be limited.")
+            self.redis_available = False
 
     async def initialize(self):
         """Initialize all data collectors and connections"""

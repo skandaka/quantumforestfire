@@ -42,21 +42,8 @@ def fix_imports_in_file(filepath):
     if 'classiq_fire_spread.py' in filepath:
         # Fix the syntax error at line 214-217
         content = re.sub(
-            r'def _get_optimization_list\(self, model: str\) -> List\[str\]:\s*"""Get list of optimizations applied to model"""\s*# This would be populated from actual Classiq optimization data\s*optimizations = \[\]\s*if \'classiq\' in model:\s*optimizations\.extend\(\[\s*\'gate_fusion\',\s*\'circuit_compression\',\s*\'qubit_routing_optimization\',\s*\'error_mitigation\'\s*\]\)',
-            '''def _get_optimization_list(self, model: str) -> List[str]:
-        """Get list of optimizations applied to model"""
-        # This would be populated from actual Classiq optimization data
-        optimizations = []
-
-        if 'classiq' in model:
-            optimizations.extend([
-                'gate_fusion',
-                'circuit_compression', 
-                'qubit_routing_optimization',
-                'error_mitigation'
-            ])
-
-        return optimizations''',
+            r'lambda: fire_count \+= 1',
+            'lambda: fire_count.__iadd__(1)',
             content,
             flags=re.DOTALL
         )
