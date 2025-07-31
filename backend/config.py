@@ -100,6 +100,16 @@ class Settings(BaseSettings):
     paradise_lat: float = Field(default=39.7596, alias="PARADISE_LAT")
     paradise_lon: float = Field(default=-121.6219, alias="PARADISE_LON")
 
+    collection_bounds: Dict[str, float] = Field(
+        default={
+            "north": 42.0,
+            "south": 32.5,
+            "east": -114.0,
+            "west": -124.5,
+        },
+        alias="COLLECTION_BOUNDS"
+    )
+
     # Performance Settings
     max_concurrent_predictions: int = Field(default=5, alias="MAX_CONCURRENT_PREDICTIONS")
     request_timeout: int = Field(default=60, alias="REQUEST_TIMEOUT")
