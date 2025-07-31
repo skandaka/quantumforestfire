@@ -225,7 +225,7 @@ class RealTimeDataManager:
         """Collect terrain data from USGS"""
         # Check cache first
         cache_key = f"terrain:{bounds['north']}:{bounds['south']}:{bounds['east']}:{bounds['west']}"
-        cached_terrain = await self.redis_client.get(cache_key)
+        cached_terrain = await self.redis_client.get(cache_key) if self.redis_client else None
 
         if cached_terrain:
             return json.loads(cached_terrain)
@@ -242,11 +242,12 @@ class RealTimeDataManager:
         terrain_data['fuel'] = fuel_data
 
         # Cache for 7 days (terrain doesn't change often)
-        await self.redis_client.setex(
-            cache_key,
+        if self.redis_client:
+            await self.redis_client.setex(
+                cache_key,
             7 * 24 * 3600,
             json.dumps(terrain_data)
-        )
+            )
 
         return terrain_data
 
@@ -407,11 +408,12 @@ class RealTimeDataManager:
             )
 
         # Cache complete collection
-        await self.redis_client.setex(
-            f"collection:{timestamp}",
-            3600,  # Keep for 1 hour
-            json.dumps(data)
-        )
+        if self.redis_client:
+            await self.redis_client.setex(
+                "latest:fire_data",
+                settings.cache_ttl,
+                json.dumps(data['fire'])
+            )
 
     async def _broadcast_to_streams(
             self,

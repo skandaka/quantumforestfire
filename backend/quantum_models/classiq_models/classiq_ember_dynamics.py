@@ -1,7 +1,6 @@
-"""
-Quantum Ember Dynamics Model using Classiq Platform
-Location: backend/quantum_models/classiq_models/classiq_ember_dynamics.py
-"""
+""""""
+from __future__ import annotations
+
 
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
@@ -97,11 +96,11 @@ class AtmosphericConditions:
 
 @qfunc
 def quantum_ember_transport(
-        ember_positions: QArray[QBit],
-        wind_field: QArray[QBit],
-        turbulence: QArray[QBit],
-        temperature_gradient: QArray[QBit],
-        landing_probabilities: Output[QArray[QBit]]
+        ember_positions: "QArray[QBit]",
+        wind_field: "QArray[QBit]",
+        turbulence: "QArray[QBit]",
+        temperature_gradient: "QArray[QBit]",
+        landing_probabilities: "Output[QArray[QBit]]"
 ):
     """
     Revolutionary quantum algorithm for ember transport modeling.
@@ -133,7 +132,7 @@ def ember_superposition_init(embers: QArray[QBit]):
 
 
 @qfunc
-def quantum_wind_transport(embers: QArray[QBit], wind: QArray[QBit]):
+def quantum_wind_transport(embers: QArray[QBit], wind: "QArray[QBit]"):
     """Model wind-driven ember transport using quantum operations"""
     # Wind strength affects transport distance
     repeat(embers.len,
@@ -150,7 +149,7 @@ def quantum_wind_transport(embers: QArray[QBit], wind: QArray[QBit]):
 
 
 @qfunc
-def quantum_turbulence_diffusion(embers: QArray[QBit], turbulence: QArray[QBit]):
+def quantum_turbulence_diffusion(embers: QArray[QBit], turbulence: "QArray[QBit]"):
     """Model turbulent diffusion of embers"""
     # Turbulence creates random walk behavior
     repeat(embers.len,
@@ -162,7 +161,7 @@ def quantum_turbulence_diffusion(embers: QArray[QBit], turbulence: QArray[QBit])
 
 
 @qfunc
-def quantum_buoyancy_effects(embers: QArray[QBit], temp_gradient: QArray[QBit]):
+def quantum_buoyancy_effects(embers: QArray[QBit], temp_gradient: "QArray[QBit]"):
     """Model buoyancy effects on hot embers"""
     # Hot embers rise due to buoyancy
     repeat(embers.len,
@@ -174,7 +173,7 @@ def quantum_buoyancy_effects(embers: QArray[QBit], temp_gradient: QArray[QBit]):
 
 
 @qfunc
-def quantum_landing_estimation(embers: QArray[QBit], output: Output[QArray[QBit]]):
+def quantum_landing_estimation(embers: QArray[QBit], output: "Output[QArray[QBit]]"):
     """Estimate ember landing probabilities using amplitude estimation"""
     # Quantum amplitude estimation for landing locations
     allocate(embers.len, output)
@@ -234,11 +233,11 @@ class ClassiqEmberDynamics:
             # Define the quantum function
             @qfunc
             def ember_transport_model(
-                    initial_positions: QArray[QBit],
-                    wind: QArray[QBit],
-                    turbulence: QArray[QBit],
-                    temperature: QArray[QBit],
-                    landing_map: Output[QArray[QBit]]
+                    initial_positions: "QArray[QBit]",
+                    wind: "QArray[QBit]",
+                    turbulence: "QArray[QBit]",
+                    temperature: "QArray[QBit]",
+                    landing_map: "Output[QArray[QBit]]"
             ):
                 quantum_ember_transport(
                     initial_positions, wind, turbulence, temperature, landing_map

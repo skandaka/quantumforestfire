@@ -26,38 +26,10 @@ class NASAFIRMSCollector:
         self._is_healthy = False
 
     async def initialize(self):
-        """Initialize all data collectors and connections"""
-        logger.info("Initializing Real-Time Data Manager...")
-
-        # Initialize Redis for caching
-        try:
-            import redis.asyncio as redis
-            self.redis_client = await redis.from_url(
-                settings.redis_url,
-                password=settings.redis_password,
-                decode_responses=True
-            )
-            # Test connection
-            await self.redis_client.ping()
-            self.redis_available = True
-            logger.info("Successfully connected to Redis")
-        except Exception as e:
-            logger.warning(f"Redis not available: {e}. Running without cache.")
-            self.redis_available = False
-            self.redis_client = None
-
-        # Initialize data collectors
-        self.collectors['nasa_firms'] = NASAFIRMSCollector(settings.nasa_firms_api_key or 'demo_key')
-        self.collectors['noaa_weather'] = NOAAWeatherCollector(settings.noaa_api_key or 'demo_key')
-        self.collectors['usgs_terrain'] = USGSTerrainCollector(settings.usgs_api_key or 'demo_key')
-
-        # Initialize each collector
-        for name, collector in self.collectors.items():
-            await collector.initialize()
-            logger.info(f"Initialized {name} collector")
-
-        self.is_running = True
-        logger.info("Real-Time Data Manager initialized successfully")
+        """Initialize the NASA FIRMS collector"""
+        self.session = aiohttp.ClientSession()
+        self._is_healthy = True
+        logger.info("NASA FIRMS collector initialized")
 
     def is_healthy(self) -> bool:
         """Check if collector is healthy"""
@@ -120,10 +92,28 @@ class NASAFIRMSCollector:
                         }
                     }
 
+
         except Exception as e:
-            logger.error(f"Error collecting FIRMS data: {str(e)}")
-            self._is_healthy = False
-            raise
+
+            logger.error(f"Error fetching FIRMS data: {str(e)}")
+
+            return {
+
+                'active_fires': [],
+
+                'metadata': {
+
+                    'source': 'NASA FIRMS',
+
+                    'collection_time': datetime.now().isoformat(),
+
+                    'bounds': bounds,
+
+                    'error': str(e)
+
+                }
+
+            }
 
     async def get_historical_fires(
         self,
@@ -139,8 +129,18 @@ class NASAFIRMSCollector:
 
             async with self.session.get(url) as response:
                 if response.status == 200:
-                    data = await response.json()
-                    return data
+                    csv_text = await response.text()
+                    # Parse CSV manually
+                    fires = []
+                    lines = csv_text.strip().split('\n')
+                    if len(lines) > 1:  # Has header
+                        headers = lines[0].split(',')
+                        for line in lines[1:]:
+                            values = line.split(',')
+                            if len(values) == len(headers):
+                                fire_data = dict(zip(headers, values))
+                                fires.append(fire_data)
+                    return fires
                 else:
                     logger.error(f"Failed to get historical data: {response.status}")
                     return []

@@ -191,7 +191,7 @@ class QuantumBackendManager:
                     'error': str(e)
                 }
 
-    def select_optimal_backend(self, requirements: Dict[str, Any]) -> Union[Backend, str]:
+    async def select_optimal_backend(self, requirements: Dict[str, Any]) -> Union[Backend, str]:
         """Select optimal backend based on requirements"""
         num_qubits = requirements.get('num_qubits', 10)
         max_time = requirements.get('max_execution_time', 300)
@@ -400,7 +400,7 @@ class QuantumSimulatorManager:
                 'num_qubits': model.get_qubit_requirements(),
                 'use_hardware': use_hardware
             }
-            backend = self.backend_manager.select_optimal_backend(requirements)
+            backend = await self.backend_manager.select_optimal_backend(requirements)
 
             # Build and run circuit
             circuit = model.build_circuit(fire_data, weather_data)

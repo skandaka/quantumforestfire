@@ -32,6 +32,8 @@ class LocationPoint(BaseModel):
 
 
 class FirePredictionRequest(BaseModel):
+    model_config = {'protected_namespaces': ()}
+
     location: LocationPoint
     radius_km: float = Field(default=50.0, gt=0, le=500)
     time_horizon_hours: int = Field(default=24, gt=0, le=72)

@@ -315,7 +315,7 @@ async def quantum_prediction_loop():
 
                 if fire_data and weather_data:
                     # Run quantum prediction
-                    prediction = await managers.quantum_manager.run_prediction(
+                    prediction = await managers.quantum_manager.run_ensemble_prediction(
                         fire_data=fire_data,
                         weather_data=weather_data
                     )

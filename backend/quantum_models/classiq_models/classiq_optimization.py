@@ -3,6 +3,7 @@ Classiq model for quantum optimization problems in firefighting.
 This version contains the full, restored functionality.
 Location: backend/quantum_models/classiq_models/classiq_optimization.py
 """
+from __future__ import annotations
 import numpy as np
 from typing import Dict, Any, Optional, List
 import logging
@@ -61,8 +62,8 @@ logger = logging.getLogger(__name__)
 
 @qfunc
 def cost_function_oracle(
-    resource_allocation: QArray[QBit],
-    risk_map: QArray[QBit],
+    resource_allocation: "QArray[QBit]",
+    risk_map: "QArray[QBit]",
     cost: Output[QBit]  # Simplified from QInt[8]
 ):
     """
@@ -74,9 +75,9 @@ def cost_function_oracle(
 
 @qfunc
 def main_optimization(
-    allocation_options: QArray[QBit],
-    risk_data: QArray[QBit],
-    optimal_allocation: Output[QArray[QBit]]
+    allocation_options: "QArray[QBit]",
+    risk_data: "QArray[QBit]",
+    optimal_allocation: "Output[QArray[QBit]]"
 ):
     """
     Main quantum function that uses an algorithm like QAOA or VQE
@@ -113,7 +114,7 @@ class ClassiqOptimization:
 
         qubo_size = num_resources * num_locations
 
-        def main_program(allocation_options: Output[QArray[QBit]], risk_data: Output[QArray[QBit]]):
+        def main_program(allocation_options: Output[QArray[QBit]], risk_data: "Output[QArray[QBit]]"):
             pass # Defines inputs for the high-level model
 
         q_model = Model()
