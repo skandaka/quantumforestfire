@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useFirePredictionStore } from '@/lib/store';
@@ -36,8 +36,7 @@ interface PredictionResponse {
 }
 
 interface SystemStatusResponse {
-  status: 'operational' | 'degraded' | 'healthy'; // Added 'healthy'
-  // Add any other properties your API returns
+  status: 'operational' | 'degraded' | 'healthy';
 }
 
 interface ApiErrorResponse {
@@ -56,31 +55,35 @@ export function useQuantumPrediction() {
   const [metrics, setMetrics] = useState<any>(null);
 
   // Check system status
-  useQuery<SystemStatusResponse, Error>({
+  const { data: systemStatusData } = useQuery<SystemStatusResponse, Error>({
     queryKey: ['system-status'],
-    queryFn: () => api.getSystemStatus(),
+    queryFn: async () => (await api.getSystemStatus()).data,
     refetchInterval: 30000,
-    onSuccess: (data) => {
-      if (data.status === 'healthy' || data.status === 'operational') {
+  });
+
+  useEffect(() => {
+    if (systemStatusData) {
+      if (systemStatusData.status === 'healthy' || systemStatusData.status === 'operational') {
         setSystemStatus('operational');
       } else {
         setSystemStatus('degraded');
       }
-    },
-    onError: () => {
-      setSystemStatus('offline');
-    },
-  });
+    }
+  }, [systemStatusData]);
 
   // Get system metrics
-  useQuery<any, Error>({
+  const { data: metricsData } = useQuery<any, Error>({
     queryKey: ['system-metrics'],
-    queryFn: () => api.getMetrics(),
+    queryFn: async () => (await api.getMetrics()).data,
     refetchInterval: 10000,
-    onSuccess: (data) => {
-      setMetrics(data);
-    },
   });
+
+  useEffect(() => {
+    if (metricsData) {
+      setMetrics(metricsData);
+    }
+  }, [metricsData]);
+
 
   // Run fire prediction
   const runPredictionMutation = useMutation<
@@ -88,7 +91,10 @@ export function useQuantumPrediction() {
       AxiosError<ApiErrorResponse>,
       PredictionRequest
   >({
-    mutationFn: (request) => api.runPrediction(request),
+    mutationFn: async (request: PredictionRequest) => {
+      const response = await api.runPrediction(request);
+      return response.data;
+    },
     onSuccess: (data) => {
       setCurrentPrediction(data);
       addPredictionToHistory(data);
@@ -103,7 +109,7 @@ export function useQuantumPrediction() {
     },
   });
 
-  // ... (rest of the hook)
+
   const { currentPrediction, predictionHistory, quantumMetrics } = useFirePredictionStore();
 
   return {
@@ -116,6 +122,5 @@ export function useQuantumPrediction() {
     isPending: runPredictionMutation.isPending,
     isRunningPrediction: runPredictionMutation.isPending,
     error: runPredictionMutation.error,
-    // Add other mutations and functions if they exist in your file
   };
 }
