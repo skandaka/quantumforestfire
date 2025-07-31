@@ -36,7 +36,7 @@ export default function DashboardPage() {
   const [timeHorizon, setTimeHorizon] = useState('24')
   const [isRunningPrediction, setIsRunningPrediction] = useState(false)
 
-  const { runPrediction, currentPrediction, isLoading } = useQuantumPrediction()
+  const { runPrediction, currentPrediction, isPending } = useQuantumPrediction()
   const { activeAlerts, fireData, weatherData, subscribeToUpdates } = useRealTimeData()
 
   // Subscribe to real-time updates
@@ -108,7 +108,7 @@ export default function DashboardPage() {
               {/* Run Prediction */}
               <Button
                 onClick={handleRunPrediction}
-                disabled={isRunningPrediction || isLoading}
+                disabled={isRunningPrediction || isPending}
                 className="quantum-glow"
               >
                 {isRunningPrediction ? (

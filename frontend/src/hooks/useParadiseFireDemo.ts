@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useFirePredictionStore } from '@/lib/store'
+import { AxiosResponse } from 'axios'
 
 export function useParadiseFireDemo() {
   const [currentState, setCurrentState] = useState<any>(null)
@@ -12,7 +13,7 @@ export function useParadiseFireDemo() {
 
   const runDemoMutation = useMutation({
     mutationFn: () => api.runParadiseDemo(),
-    onSuccess: (response) => {
+    onSuccess: (response: AxiosResponse<any>) => {
       const data = response.data
       setCurrentState(data.historical_data)
       setQuantumPrediction(data.quantum_prediction)
@@ -42,7 +43,7 @@ export function useParadiseFireDemo() {
     currentState,
     quantumPrediction,
     classicalPrediction,
-    isLoading: runDemoMutation.isLoading,
+    isPending: runDemoMutation.isPending,
     error: runDemoMutation.error
   }
 }

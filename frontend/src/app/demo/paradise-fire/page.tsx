@@ -45,7 +45,7 @@ export default function ParadiseFireDemoPage() {
     currentState,
     quantumPrediction,
     classicalPrediction,
-    isLoading
+    isPending
   } = useParadiseFireDemo()
 
   // Auto-play timer

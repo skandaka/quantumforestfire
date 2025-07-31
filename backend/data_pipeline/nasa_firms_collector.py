@@ -127,23 +127,27 @@ class NASAFIRMSCollector:
 
             url = f"{self.base_url}/csv/{self.api_key}/MODIS_NRT/{bounds['west']},{bounds['south']},{bounds['east']},{bounds['north']}/{days_back}"
 
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    csv_text = await response.text()
-                    # Parse CSV manually
-                    fires = []
-                    lines = csv_text.strip().split('\n')
-                    if len(lines) > 1:  # Has header
-                        headers = lines[0].split(',')
-                        for line in lines[1:]:
-                            values = line.split(',')
-                            if len(values) == len(headers):
-                                fire_data = dict(zip(headers, values))
-                                fires.append(fire_data)
-                    return fires
-                else:
-                    logger.error(f"Failed to get historical data: {response.status}")
-                    return []
+            try:
+                async with self.session.get(url) as response:
+                    if response.status == 200:
+                        csv_text = await response.text()
+                        # Parse CSV manually
+                        fires = []
+                        lines = csv_text.strip().split('\n')
+                        if len(lines) > 1:  # Has header
+                            headers = lines[0].split(',')
+                            for line in lines[1:]:
+                                values = line.split(',')
+                                if len(values) == len(headers):
+                                    fire_data = dict(zip(headers, values))
+                                    fires.append(fire_data)
+                        return fires
+                    else:
+                        logger.error(f"Failed to get historical data: {response.status}")
+                        return []
+            except Exception as e:
+                logger.error(f"Error getting historical fires: {str(e)}")
+                return []
 
         except Exception as e:
             logger.error(f"Error getting historical fires: {str(e)}")

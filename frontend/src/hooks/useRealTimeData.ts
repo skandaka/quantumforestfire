@@ -17,6 +17,17 @@ interface Alert {
   timestamp: string
 }
 
+// Add types for your API responses
+interface FireDataResponse {
+  data: {
+    active_fires: any[];
+  }
+}
+
+interface WeatherDataResponse {
+  data: any;
+}
+
 export function useRealTimeData() {
   const [activeAlerts, setActiveAlerts] = useState<Alert[]>([])
   const [activeFireCount, setActiveFireCount] = useState(0)
@@ -32,7 +43,7 @@ export function useRealTimeData() {
   } = useFirePredictionStore()
 
   // Fetch fire data
-  const { data: fireDataResponse } = useQuery({
+  const { data: fireDataResponse } = useQuery<FireDataResponse>({
     queryKey: ['fire-data'],
     queryFn: () => api.getFireData(),
     refetchInterval: 60000, // Refresh every minute
@@ -43,7 +54,7 @@ export function useRealTimeData() {
   })
 
   // Fetch weather data
-  const { data: weatherDataResponse } = useQuery({
+  const { data: weatherDataResponse } = useQuery<WeatherDataResponse>({
     queryKey: ['weather-data'],
     queryFn: () => api.getWeatherData(),
     refetchInterval: 300000, // Refresh every 5 minutes
@@ -81,7 +92,7 @@ export function useRealTimeData() {
   useEffect(() => {
     if (fireData?.active_fires) {
       const highRisk = fireData.active_fires.filter(
-        (fire: any) => fire.intensity > 0.7 || fire.confidence > 0.8
+          (fire: any) => fire.intensity > 0.7 || fire.confidence > 0.8
       ).length
       setHighRiskAreas(highRisk)
     }
@@ -89,7 +100,7 @@ export function useRealTimeData() {
 
   // Subscribe to updates callback
   const subscribeToUpdates = useCallback((callback: (update: any) => void) => {
-    // Create a wrapper to call the callback with updates
+    // This is a mock subscription, adjust if you have a real WebSocket/SSE implementation
     const interval = setInterval(() => {
       if (activeAlerts.length > 0) {
         callback({

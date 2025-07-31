@@ -130,10 +130,10 @@ class ClassiqManager:
             # Check authentication by trying to create a simple model
             try:
                 @qfunc
-                def test_func():
+                def main():
                     pass
 
-                test_model = create_model(test_func)
+                test_model = create_model(main)
                 if test_model is not None:
                     self.is_authenticated = True
                     logger.info("Classiq authenticated successfully")
@@ -166,7 +166,7 @@ class ClassiqManager:
             # Classiq simulators (always available)
             self.available_backends['simulator'] = {
                 'type': ClassiqBackendType.SIMULATOR.value,
-                'name': ClassiqSimulatorBackendNames.SIMULATOR,
+                'name': 'simulator',
                 'max_qubits': 30,
                 'status': 'available',
                 'queue_length': 0,
@@ -175,7 +175,7 @@ class ClassiqManager:
 
             self.available_backends['simulator_statevector'] = {
                 'type': ClassiqBackendType.SIMULATOR_STATEVECTOR.value,
-                'name': ClassiqSimulatorBackendNames.SIMULATOR_STATEVECTOR,
+                'name': 'simulator_statevector',
                 'max_qubits': 25,
                 'status': 'available',
                 'queue_length': 0,
