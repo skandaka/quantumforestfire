@@ -5,7 +5,7 @@ Location: backend/config.py
 
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from datetime import timedelta
 import os
 from dotenv import load_dotenv
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     workers: int = Field(default=4, alias="WORKERS")
 
     # CORS settings
-    cors_origins: List[str] = Field(
+    cors_origins: Union[str, List[str]] = Field(
         default=[
             "http://localhost:3000",
             "http://localhost:8000",
@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     mapbox_api_key: Optional[str] = Field(default=None, alias="MAPBOX_API_KEY")
 
     # Quantum Platform Credentials
-    ibm_quantum_token: Optional[str] = Field(default=None, alias="IBM_QUANTUM_TOKEN")
-    ibm_quantum_crn: Optional[str] = Field(default=None, alias="IBM_QUANTUM_CRN")  # <-- 1. LINE ADDED HERE
+    IBM_QUANTUM_TOKEN: Optional[str] = Field(default=None, alias="IBM_QUANTUM_TOKEN")
+    IBM_QUANTUM_CRN: Optional[str] = Field(default=None, alias="IBM_QUANTUM_CRN")  # <-- 1. LINE ADDED HERE
     ibm_quantum_hub: str = Field(default="ibm-q", alias="IBM_QUANTUM_HUB")
     ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
     ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
@@ -182,7 +182,8 @@ class Settings(BaseSettings):
             "classiq_hardware",
             "ibm_simulator",
             "ibm_hardware",
-            "local_simulator"
+            "local_simulator",
+            "aer_simulator",
         ]
         if v not in valid_backends:
             raise ValueError(f"Invalid quantum backend: {v}")

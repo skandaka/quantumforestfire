@@ -5,7 +5,7 @@ Initialize and test REAL quantum components
 """
 import asyncio
 import logging
-from .quantum_models.quantum_simulator import QuantumSimulatorManager
+from quantum_models.quantum_simulator import QuantumSimulatorManager
 from config import settings  # <-- This import is correct here
 import sys
 import os
@@ -20,7 +20,7 @@ async def test_quantum_system():
     logger.info("🚀 Testing REAL Quantum System...")
 
     # Initialize quantum manager
-    quantum_manager = QuantumSimulatorManager(settings=settings)
+    quantum_manager = QuantumSimulatorManager()
     await quantum_manager.initialize()
 
     # Check available backends

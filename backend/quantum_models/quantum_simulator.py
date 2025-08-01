@@ -56,7 +56,7 @@ class QuantumBackendManager:
         await self._initialize_aer_simulators()
 
         # Initialize IBM Quantum if credentials available
-        if IBM_RUNTIME_AVAILABLE and settings.ibm_quantum_token:
+        if IBM_RUNTIME_AVAILABLE and settings.IBM_QUANTUM_TOKEN:
             await self._initialize_ibm_quantum()
 
         # Update backend status
@@ -130,7 +130,8 @@ class QuantumBackendManager:
         """Initialize IBM Quantum Runtime Service"""
         try:
             # Initialize the service
-            self.service = QiskitRuntimeService(
+            # self.service = QiskitRuntimeService()
+            self.ibm_service = QiskitRuntimeService(
                 channel="ibm_quantum",
                 token=settings.IBM_QUANTUM_TOKEN,  # <-- Use the imported 'settings'
                 instance=settings.IBM_QUANTUM_CRN  # <-- Use the imported 'settings'
