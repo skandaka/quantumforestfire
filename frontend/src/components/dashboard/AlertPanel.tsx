@@ -4,15 +4,17 @@ import { cn } from '@/lib/utils'
 
 interface Alert {
   id: string
-  type: 'fire' | 'weather' | 'evacuation'
+  type: 'fire' | 'weather' | 'evacuation' | 'high_risk'
   severity: 'low' | 'medium' | 'high' | 'critical'
   title: string
   message: string
   location?: {
     latitude: number
     longitude: number
+    name?: string
   }
   timestamp: string
+  probability?: number
 }
 
 interface AlertPanelProps {
@@ -28,6 +30,8 @@ export function AlertPanel({ alerts }: AlertPanelProps) {
         return <Wind className="h-5 w-5" />
       case 'evacuation':
         return <Users className="h-5 w-5" />
+      case 'high_risk':
+        return <AlertTriangle className="h-5 w-5" />
       default:
         return <AlertTriangle className="h-5 w-5" />
     }

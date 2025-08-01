@@ -65,6 +65,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Define missing functions for when Classiq is not available
+def allocate(*args, **kwargs): pass
+
 
 @dataclass
 class EmberState:

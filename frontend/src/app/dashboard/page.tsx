@@ -29,15 +29,15 @@ const FireVisualization3D = dynamic(
     }
 )
 
-const MapView = dynamic(
-    () => import('@/components/dashboard/MapView'),
+const Globe3D = dynamic(
+    () => import('@/components/maps/Globe3D').then(mod => ({ default: mod.Globe3D })),
     {
       ssr: false,
       loading: () => (
           <div className="w-full h-full flex items-center justify-center bg-gray-900">
             <div className="text-center text-white">
               <div className="spinner w-8 h-8 mx-auto mb-4"></div>
-              <p>Loading Map...</p>
+              <p>Loading Global Fire Map...</p>
             </div>
           </div>
       )
@@ -190,11 +190,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex h-[calc(100vh-89px)]">
+        <div className="dashboard-grid">
           {/* Sidebar */}
-          <div className="w-80 border-r border-gray-800 bg-gray-900/50 backdrop-blur flex flex-col">
+          <div className="bg-gray-900/50 backdrop-blur border-r border-gray-800 flex flex-col overflow-hidden">
             {/* Navigation */}
-            <nav className="p-4 space-y-2">
+            <nav className="p-4 space-y-2 flex-shrink-0">
               {sidebarTabs.map((tab) => (
                   <button
                       key={tab.id}
@@ -205,10 +205,10 @@ export default function DashboardPage() {
                               : 'text-gray-400 hover:text-white hover:bg-gray-800'
                       }`}
                   >
-                    <tab.icon className="w-5 h-5" />
+                    <tab.icon className="w-5 h-5 flex-shrink-0" />
                     <span className="font-medium">{tab.label}</span>
                     {tab.badge !== undefined && tab.badge > 0 && (
-                        <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                        <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-1 flex-shrink-0">
                     {tab.badge}
                   </span>
                     )}
@@ -217,7 +217,7 @@ export default function DashboardPage() {
             </nav>
 
             {/* Quick Stats */}
-            <div className="p-4 space-y-3 flex-1">
+            <div className="p-4 space-y-3 flex-1 overflow-y-auto">
               <h3 className="text-sm font-semibold text-gray-400 mb-3">Live Metrics</h3>
 
               <MetricCard
@@ -273,37 +273,46 @@ export default function DashboardPage() {
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 overflow-hidden">
-            {activeTab === 'overview' && (
-                <PredictionDashboard
-                    prediction={currentPrediction}
-                    fireData={displayFireData}
-                    weatherData={displayWeatherData}
-                />
-            )}
+          <div className="content-area">
+            <div className="visualization-container">
+              {activeTab === 'overview' && (
+                  <PredictionDashboard
+                      prediction={currentPrediction}
+                      fireData={displayFireData}
+                      weatherData={displayWeatherData}
+                  />
+              )}
 
-            {activeTab === '3d-visualization' && (
-                <FireVisualization3D
-                    predictionData={currentPrediction || displayFireData}
-                    showEmbers={true}
-                    showQuantumField={false}
-                    showTerrain={true}
-                    interactive={true}
-                />
-            )}
+              {activeTab === '3d-visualization' && (
+                  <FireVisualization3D
+                      predictionData={currentPrediction || displayFireData}
+                      showEmbers={true}
+                      showQuantumField={false}
+                      showTerrain={true}
+                      interactive={true}
+                  />
+              )}
 
-            {activeTab === 'map' && (
-                <MapView
-                    fireData={displayFireData}
-                    predictionData={currentPrediction}
-                    center={[-121.6219, 39.7596]}
-                    zoom={9}
-                    showEmberPrediction={!!currentPrediction}
-                />
-            )}
+              {activeTab === 'map' && (
+                  <Globe3D
+                      fires={displayFireData?.active_fires?.map((fire: any) => ({
+                        id: `fire-${fire.center_lat}-${fire.center_lon}`,
+                        lat: fire.center_lat,
+                        lng: fire.center_lon,
+                        intensity: fire.intensity,
+                        name: `Fire ${Math.round(fire.center_lat)}°N ${Math.round(Math.abs(fire.center_lon))}°W`,
+                        acresBurned: Math.round(fire.area_hectares * 2.47), // Convert hectares to acres
+                        confidence: fire.confidence,
+                        detected: fire.detection_time
+                      })) || []}
+                      autoRotate={true}
+                      className="w-full h-full"
+                  />
+              )}
 
-            {activeTab === 'quantum' && <QuantumMetrics />}
-            {activeTab === 'alerts' && <AlertPanel alerts={activeAlerts} />}
+              {activeTab === 'quantum' && <QuantumMetrics />}
+              {activeTab === 'alerts' && <AlertPanel alerts={activeAlerts} />}
+            </div>
           </div>
         </div>
       </div>

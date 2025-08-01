@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import numpy as np
 import json
+from utils.ssl_helpers import create_verified_session
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class NOAAWeatherCollector:
 
     async def initialize(self):
         """Initialize the collector"""
-        self.session = aiohttp.ClientSession(
+        # Using our helper function to create a session with proper SSL verification
+        self.session = await create_verified_session(
             headers={'User-Agent': 'QuantumFirePrediction/1.0'}
         )
         self._is_healthy = True

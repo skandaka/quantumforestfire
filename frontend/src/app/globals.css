@@ -30,9 +30,23 @@
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+  }
+  
+  /* Ensure proper stacking context */
+  section {
+    position: relative;
+    z-index: 1;
+  }
+  
+  /* Fix canvas and 3D elements */
+  canvas {
+    display: block;
+    max-width: 100%;
   }
 }
 
@@ -55,16 +69,87 @@
   background: rgba(239, 68, 68, 0.7);
 }
 
-/* Quantum glow effects */
+/* Quantum glow effect */
 .quantum-glow {
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5),
-              0 0 40px rgba(239, 68, 68, 0.3),
-              0 0 60px rgba(239, 68, 68, 0.1);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+  transition: box-shadow 0.3s ease;
 }
 
-.quantum-glow-sm {
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5),
-              0 0 20px rgba(239, 68, 68, 0.3);
+.quantum-glow:hover {
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.8);
+}
+
+/* Spinner animation */
+.spinner {
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top: 2px solid #ef4444;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Fire particle effects */
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.fire-flicker {
+  animation: flicker 0.5s ease-in-out infinite alternate;
+}
+
+/* Layout fixes */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: calc(100vh - 89px);
+  overflow: hidden;
+}
+
+.content-area {
+  overflow: hidden;
+  position: relative;
+}
+
+/* Map and 3D view containers */
+.visualization-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Responsive fixes */
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+}
+
+/* Alert styles */
+.alert-critical {
+  border-left: 4px solid #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.alert-high {
+  border-left: 4px solid #f97316;
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.alert-medium {
+  border-left: 4px solid #eab308;
+  background: rgba(234, 179, 8, 0.1);
+}
+
+.alert-low {
+  border-left: 4px solid #22c55e;
+  background: rgba(34, 197, 94, 0.1);
 }
 
 /* Fire animation */

@@ -8,6 +8,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import numpy as np
+from utils.ssl_helpers import create_verified_session
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class USGSTerrainCollector:
 
     async def initialize(self):
         """Initialize the collector"""
-        self.session = aiohttp.ClientSession()
+        self.session = await create_verified_session()
         self._is_healthy = True
         logger.info("USGS Terrain collector initialized")
 

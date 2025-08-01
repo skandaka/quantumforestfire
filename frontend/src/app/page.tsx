@@ -6,17 +6,31 @@ import { Flame, AlertTriangle, Activity, Cpu, Play, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Stars } from '@react-three/drei'
-import { FireParticles } from '@/components/visualization/FireParticles'
+import { RealisticFireViz } from '@/components/visualization/RealisticFireViz'
 import { Button } from '@/components/ui/Button'
 import { MetricCard } from '@/components/dashboard/MetricCard'
+import { useRealTimeData } from '@/hooks/useRealTimeData'
 
 export default function HomePage() {
-  const [demoStats, setDemoStats] = useState({
-    systemStatus: 'operational',
-    activeFireCount: 2,
-    highRiskAreas: 1,
-    accuracy: '94.3%'
-  })
+  const { 
+    fireData, 
+    weatherData, 
+    activeFireCount, 
+    activeAlerts, 
+    highRiskAreas,
+    systemStatus,
+    isLoadingFireData 
+  } = useRealTimeData()
+
+  // Get dynamic stats from real data
+  const stats = {
+    systemStatus: systemStatus || 'operational',
+    activeFireCount: activeFireCount,
+    highRiskAreas: highRiskAreas,
+    accuracy: '94.3%',
+    windSpeed: weatherData?.current_conditions?.avg_wind_speed || 0,
+    alertCount: activeAlerts.length
+  }
 
   return (
       <div className="min-h-screen bg-black text-white">
@@ -25,11 +39,16 @@ export default function HomePage() {
           {/* 3D Fire Visualization Background */}
           <div className="absolute inset-0 opacity-60">
             <Canvas camera={{ position: [0, 0, 5], fov: 60 }}>
-              <ambientLight intensity={0.5} />
-              <pointLight position={[10, 10, 10]} />
+              <ambientLight intensity={0.3} />
+              <pointLight position={[10, 10, 10]} intensity={1} />
               <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade />
-              <FireParticles count={1000} spread={20} speed={1} />
-              <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.3} />
+              <RealisticFireViz 
+                fireData={fireData}
+                intensity={fireData?.active_fires?.[0]?.intensity || 0.8} 
+                windDirection={weatherData?.current_conditions?.dominant_wind_direction || 45} 
+                windSpeed={weatherData?.current_conditions?.avg_wind_speed || 15}
+              />
+              <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.1} />
             </Canvas>
           </div>
 
@@ -80,36 +99,76 @@ export default function HomePage() {
             >
               <MetricCard
                   title="System Status"
-                  value="Operational"
+                  value={isLoadingFireData ? "Loading..." : (stats.systemStatus === 'operational' ? 'Operational' : stats.systemStatus)}
                   icon={<Cpu className="h-5 w-5" />}
-                  trend="up"
+                  trend={stats.systemStatus === 'operational' ? 'up' : 'down'}
                   className="bg-black/60 backdrop-blur border border-gray-800"
               />
 
               <MetricCard
                   title="Active Fires"
-                  value="2"
+                  value={isLoadingFireData ? "..." : stats.activeFireCount.toString()}
                   icon={<Flame className="h-5 w-5" />}
-                  trend="neutral"
+                  trend={stats.activeFireCount > 2 ? 'up' : 'neutral'}
                   className="bg-black/60 backdrop-blur border border-gray-800"
               />
 
               <MetricCard
                   title="High Risk Areas"
-                  value="1"
+                  value={isLoadingFireData ? "..." : stats.highRiskAreas.toString()}
                   icon={<AlertTriangle className="h-5 w-5" />}
-                  trend="up"
+                  trend={stats.highRiskAreas > 1 ? 'up' : 'neutral'}
                   className="bg-black/60 backdrop-blur border border-gray-800"
               />
 
               <MetricCard
-                  title="Accuracy Rate"
-                  value="94.3%"
+                  title="Wind Speed"
+                  value={isLoadingFireData ? "..." : `${stats.windSpeed} mph`}
                   icon={<Activity className="h-5 w-5" />}
-                  trend="up"
+                  trend={stats.windSpeed > 20 ? 'up' : 'neutral'}
                   className="bg-black/60 backdrop-blur border border-gray-800"
               />
             </motion.div>
+
+            {/* Real-time Alerts */}
+            {activeAlerts.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.5, duration: 0.8 }}
+                className="mt-8 max-w-4xl mx-auto"
+              >
+                <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="h-5 w-5 text-red-400" />
+                    <h3 className="text-lg font-semibold text-red-400">Live Alerts</h3>
+                    <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                      {activeAlerts.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {activeAlerts.slice(0, 3).map((alert) => (
+                      <div key={alert.id} className="flex items-start gap-3 p-2 bg-black/30 rounded">
+                        <div className={`w-2 h-2 rounded-full mt-2 ${
+                          alert.severity === 'critical' ? 'bg-red-500' :
+                          alert.severity === 'high' ? 'bg-orange-500' : 'bg-yellow-500'
+                        }`} />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{alert.title}</div>
+                          <div className="text-xs text-gray-400">{alert.message}</div>
+                          {alert.location?.name && (
+                            <div className="text-xs text-blue-400">{alert.location.name}</div>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(alert.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </div>
         </section>
 

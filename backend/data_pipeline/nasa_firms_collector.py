@@ -12,6 +12,7 @@ import asyncio
 from config import settings
 from data_pipeline.noaa_weather_collector import NOAAWeatherCollector
 from data_pipeline.usgs_terrain_collector import USGSTerrainCollector
+from utils.ssl_helpers import create_verified_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class NASAFIRMSCollector:
 
     async def initialize(self):
         """Initialize the NASA FIRMS collector"""
-        self.session = aiohttp.ClientSession()
+        self.session = await create_verified_session()
         self._is_healthy = True
         logger.info("NASA FIRMS collector initialized")
 

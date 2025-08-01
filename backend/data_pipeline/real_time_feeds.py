@@ -346,6 +346,8 @@ class RealTimeDataManager:
         self._stream_subscribers[stream_type].append(queue)
         return queue
 
+
+
     async def get_data_for_location(self, latitude: float, longitude: float, radius_km: float = 50) -> Dict[str, Any]:
         point = Point(longitude, latitude)
         fire_data = await self.get_latest_fire_data() or {}
@@ -364,6 +366,98 @@ class RealTimeDataManager:
             'weather': self._interpolate_weather(weather_data, latitude, longitude),
             'terrain': self._extract_terrain_at_point(await self._collect_terrain_data(settings.collection_bounds), latitude, longitude),
             'timestamp': datetime.utcnow().isoformat()
+        }
+
+    async def get_demo_fire_data(self) -> Dict[str, Any]:
+        """Get comprehensive demo fire data when real data isn't available"""
+        current_time = datetime.utcnow()
+
+        return {
+            'active_fires': [
+                {
+                    'id': 'demo_fire_paradise_001',
+                    'latitude': 39.7596,
+                    'longitude': -121.6219,
+                    'intensity': 0.92,
+                    'area_hectares': 2500.0,
+                    'confidence': 0.95,
+                    'brightness_temperature': 425.0,
+                    'detection_time': (current_time - timedelta(minutes=30)).isoformat(),
+                    'satellite': 'NASA MODIS',
+                    'frp': 850.0,
+                    'center_lat': 39.7596,
+                    'center_lon': -121.6219
+                },
+                {
+                    'id': 'demo_fire_butte_002',
+                    'latitude': 39.7200,
+                    'longitude': -121.5800,
+                    'intensity': 0.76,
+                    'area_hectares': 1200.0,
+                    'confidence': 0.88,
+                    'brightness_temperature': 398.0,
+                    'detection_time': (current_time - timedelta(minutes=45)).isoformat(),
+                    'satellite': 'NASA VIIRS',
+                    'frp': 420.0,
+                    'center_lat': 39.7200,
+                    'center_lon': -121.5800
+                },
+                {
+                    'id': 'demo_fire_chico_003',
+                    'latitude': 39.8100,
+                    'longitude': -121.7200,
+                    'intensity': 0.54,
+                    'area_hectares': 650.0,
+                    'confidence': 0.82,
+                    'brightness_temperature': 375.0,
+                    'detection_time': (current_time - timedelta(hours=1)).isoformat(),
+                    'satellite': 'NASA MODIS',
+                    'frp': 280.0,
+                    'center_lat': 39.8100,
+                    'center_lon': -121.7200
+                },
+                {
+                    'id': 'demo_fire_sacramento_004',
+                    'latitude': 38.5800,
+                    'longitude': -121.4900,
+                    'intensity': 0.68,
+                    'area_hectares': 890.0,
+                    'confidence': 0.91,
+                    'brightness_temperature': 410.0,
+                    'detection_time': (current_time - timedelta(minutes=15)).isoformat(),
+                    'satellite': 'NASA VIIRS',
+                    'frp': 340.0,
+                    'center_lat': 38.5800,
+                    'center_lon': -121.4900
+                },
+                {
+                    'id': 'demo_fire_redding_005',
+                    'latitude': 40.2100,
+                    'longitude': -122.1500,
+                    'intensity': 0.83,
+                    'area_hectares': 1800.0,
+                    'confidence': 0.94,
+                    'brightness_temperature': 435.0,
+                    'detection_time': (current_time - timedelta(minutes=20)).isoformat(),
+                    'satellite': 'NASA MODIS',
+                    'frp': 720.0,
+                    'center_lat': 40.2100,
+                    'center_lon': -122.1500
+                }
+            ],
+            'metadata': {
+                'source': 'Demo Data - NASA FIRMS Simulation',
+                'collection_time': current_time.isoformat(),
+                'total_detections': 5,
+                'bounds': {
+                    'north': 40.5,
+                    'south': 38.0,
+                    'east': -121.0,
+                    'west': -122.5
+                },
+                'data_quality': 'high',
+                'last_satellite_pass': (current_time - timedelta(minutes=12)).isoformat()
+            }
         }
 
     async def get_paradise_demo_data(self) -> Dict[str, Any]:

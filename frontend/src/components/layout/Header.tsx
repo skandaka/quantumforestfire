@@ -34,21 +34,21 @@ export function Header() {
       'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
       scrolled ? 'bg-black/80 backdrop-blur-lg border-b border-gray-800' : 'bg-transparent'
     )}>
-      <nav className="mx-auto max-w-7xl px-6 lg:px-8" aria-label="Top">
-        <div className="flex w-full items-center justify-between py-4">
+      <nav className="mx-auto max-w-7xl px-4 lg:px-8" aria-label="Top">
+        <div className="flex w-full items-center justify-between py-3 gap-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
             <div className="relative">
               <Flame className="h-8 w-8 text-red-500 transition-transform group-hover:scale-110" />
               <div className="absolute inset-0 bg-red-500 blur-xl opacity-50 group-hover:opacity-75 transition-opacity" />
             </div>
-            <span className="text-xl font-bold">
+            <span className="text-xl font-bold whitespace-nowrap">
               Quantum<span className="text-red-500">Fire</span>
             </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-1">
             {navigation.map((item) => {
               const isActive = pathname === item.href
               return (
@@ -56,18 +56,18 @@ export function Header() {
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors',
+                    'relative flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors rounded-lg',
                     isActive
-                      ? 'text-red-500'
-                      : 'text-gray-300 hover:text-white'
+                      ? 'text-red-500 bg-red-500/10'
+                      : 'text-gray-300 hover:text-white hover:bg-gray-800/50'
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.name}</span>
+                  <item.icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="whitespace-nowrap">{item.name}</span>
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute inset-x-0 -bottom-px h-px bg-red-500"
+                      className="absolute inset-x-0 -bottom-px h-px bg-red-500 rounded-full"
                     />
                   )}
                 </Link>
@@ -76,20 +76,20 @@ export function Header() {
           </div>
 
           {/* System Status + CTA */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-3 flex-shrink-0">
             {/* System Status Indicator */}
             <div className="flex items-center gap-2 text-sm">
               <div className={cn(
                 'h-2 w-2 rounded-full',
                 systemStatus === 'operational' ? 'bg-green-500' : 'bg-yellow-500'
               )} />
-              <span className="text-gray-400">
+              <span className="text-gray-400 whitespace-nowrap">
                 {systemStatus === 'operational' ? 'System Active' : 'Limited'}
               </span>
             </div>
 
             <Link href="/dashboard">
-              <Button size="sm" className="quantum-glow-sm">
+              <Button size="sm" className="quantum-glow-sm whitespace-nowrap">
                 Launch App
               </Button>
             </Link>
