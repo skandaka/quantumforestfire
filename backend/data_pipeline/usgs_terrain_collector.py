@@ -87,28 +87,40 @@ class USGSTerrainCollector:
                 }
             }
 
-    async def _get_elevation_at_point(self, lat: float, lon: float) -> float:
-        """Get elevation at a specific point"""
+    async def _get_elevation_point(self, lat: float, lon: float) -> float:
+        """Get elevation for a single point"""
         try:
             params = {
-                'geometry': f'{lon},{lat}',
-                'geometryType': 'esriGeometryPoint',
-                'returnGeometry': 'false',
-                'returnCatalogItems': 'false',
-                'f': 'json'
+                'x': lon,
+                'y': lat,
+                'units': 'Meters',
+                'output': 'json'
             }
 
-            async with self.session.get(self.base_url, params=params) as response:
+            async with self.session.get(self.elevation_url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if 'value' in data:
-                        return float(data['value'])
+                    elevation_str = data.get('USGS_Elevation_Point_Query_Service', {}).get('Elevation_Query', {}).get(
+                        'Elevation', 'NoData')
 
-            return 0.0
+                    # Handle NoData responses
+                    if elevation_str == 'NoData' or elevation_str is None:
+                        logger.warning(f"No elevation data available for coordinates {lat}, {lon}")
+                        return 0.0  # Default to sea level
+
+                    try:
+                        return float(elevation_str)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid elevation value '{elevation_str}' for coordinates {lat}, {lon}")
+                        return 0.0
+                else:
+                    logger.error(f"USGS elevation API returned status {response.status}")
+                    return 0.0
 
         except Exception as e:
             logger.error(f"Error getting elevation: {str(e)}")
-            return 0.0
+            return 0.0  # Return default elevation instead of failing
+
 
     async def get_fuel_data(self, bounds: Dict[str, float]) -> Dict[str, Any]:
         """Get vegetation/fuel model data"""

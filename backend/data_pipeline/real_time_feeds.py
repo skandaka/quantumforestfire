@@ -20,7 +20,9 @@ from .data_processor import FireDataProcessor
 from .data_validation import DataValidator
 from .nasa_firms_collector import NASAFIRMSCollector
 from .noaa_weather_collector import NOAAWeatherCollector
+from .openmeteo_weather_collector import OpenMeteoWeatherCollector
 from .usgs_terrain_collector import USGSTerrainCollector
+from data_pipeline.openmeteo_weather_collector import OpenMeteoWeatherCollector
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,120 @@ class RealTimeDataManager:
         logger.info(f"Data collection completed in {duration:.2f} seconds.")
         return processed_data
 
+    # backend/data_pipeline/real_time_feeds.py (add this method)
+
+    async def collect_area_data(self, bounds: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Collect all data types for a specific geographic area
+
+        Args:
+            bounds: Dictionary with 'north', 'south', 'east', 'west'
+
+        Returns:
+            Comprehensive area data for quantum processing
+        """
+        start_time = datetime.now()
+
+        try:
+            # Run parallel collection for all data types
+            tasks = {
+                'fire': self._collect_fire_data(bounds),
+                'weather': self._collect_weather_data(bounds),
+                'terrain': self._collect_terrain_data(bounds)
+            }
+
+            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+            area_data = {}
+            for name, result in zip(tasks.keys(), results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to collect {name} data for area: {result}")
+                    # Provide default data structure
+                    if name == 'fire':
+                        area_data[name] = {'active_fires': [], 'metadata': {'error': str(result)}}
+                    elif name == 'weather':
+                        area_data[name] = {
+                            'current_conditions': {
+                                'avg_temperature': 20,
+                                'avg_humidity': 50,
+                                'avg_wind_speed': 10,
+                                'max_wind_speed': 15,
+                                'dominant_wind_direction': 0
+                            },
+                            'metadata': {'error': str(result)}
+                        }
+                    elif name == 'terrain':
+                        area_data[name] = {'elevation_grid': np.zeros((50, 50)), 'metadata': {'error': str(result)}}
+                else:
+                    area_data[name] = result
+
+            # Process the collected data
+            processed_data = await self.processor.process_collection(area_data)
+
+            # Add collection metadata
+            processed_data['collection_metadata'] = {
+                'bounds': bounds,
+                'collection_time': (datetime.now() - start_time).total_seconds(),
+                'timestamp': datetime.now().isoformat()
+            }
+
+            return processed_data
+
+        except Exception as e:
+            logger.error(f"Critical error in area data collection: {str(e)}")
+            raise
+
+    async def queue_critical_alert(self, alert_data: Dict[str, Any]):
+        """Queue a critical alert for immediate notification"""
+        try:
+            alert = {
+                'id': f"alert_{datetime.now().timestamp()}",
+                'timestamp': datetime.now().isoformat(),
+                **alert_data
+            }
+
+            # Store in Redis
+            if self.redis_client:
+                await self.redis_client.lpush('alerts:critical', json.dumps(alert))
+                await self.redis_client.ltrim('alerts:critical', 0, 99)  # Keep last 100
+
+                # Publish to subscribers
+                await self.redis_client.publish('alerts:channel', json.dumps(alert))
+
+            # Add to stream subscribers
+            await self._broadcast_to_streams({'type': 'alert', 'data': alert}, 'alerts')
+
+            logger.warning(f"Critical alert queued: {alert_data.get('message', 'Unknown')}")
+
+        except Exception as e:
+            logger.error(f"Failed to queue critical alert: {str(e)}")
+
+    async def _queue_priority_prediction(self, high_risk_area: Dict[str, Any]):
+        """Queue a priority prediction for high-risk area"""
+        try:
+            priority_request = {
+                'location': {
+                    'latitude': high_risk_area['latitude'],
+                    'longitude': high_risk_area['longitude']
+                },
+                'radius': 25,  # km
+                'priority': 'high',
+                'reason': f"Risk level: {high_risk_area['risk_level']}",
+                'queued_at': datetime.now().isoformat()
+            }
+
+            if self.redis_client:
+                await self.redis_client.lpush(
+                    'predictions:priority_queue',
+                    json.dumps(priority_request)
+                )
+
+            logger.info(
+                f"Queued priority prediction for high-risk area at {high_risk_area['latitude']:.4f}, {high_risk_area['longitude']:.4f}")
+
+        except Exception as e:
+            logger.error(f"Failed to queue priority prediction: {str(e)}")
+
     async def _collect_fire_data(self, bounds: Dict) -> Dict:
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=1)
@@ -124,12 +240,53 @@ class RealTimeDataManager:
         return fire_data
 
     async def _collect_weather_data(self, bounds: Dict) -> Dict:
-        weather_data = await self.collectors['noaa_weather'].get_weather_data(
-            bounds, settings.weather_forecast_days
-        )
-        weather_data['fire_weather'] = await self.collectors['noaa_weather'].get_fire_weather_data(bounds)
-        weather_data['wind_field_3d'] = await self.collectors['noaa_weather'].get_wind_field(bounds, [10, 50, 100])
-        return weather_data
+        """Collect weather data with proper error handling"""
+        try:
+            # Use Open-Meteo collector instead of NOAA
+            if 'openmeteo' not in self.collectors:
+                self.collectors['openmeteo'] = OpenMeteoWeatherCollector()
+                await self.collectors['openmeteo'].initialize()
+
+            weather_data = await self.collectors['openmeteo'].get_weather_data(
+                bounds,
+                forecast_days=settings.weather_forecast_days
+            )
+
+            # Log high-risk areas for immediate quantum analysis
+            if weather_data.get('high_risk_areas'):
+                logger.warning(f"Found {len(weather_data['high_risk_areas'])} high-risk weather areas")
+
+                # Trigger immediate quantum prediction for high-risk areas
+                for area in weather_data['high_risk_areas']:
+                    if area['risk_level'] in ['extreme', 'very_high']:
+                        await self._queue_priority_prediction(area)
+
+            return weather_data
+
+        except Exception as e:
+            logger.error(f"Weather collection failed: {str(e)}")
+
+            # Return minimal valid data structure to prevent NoData errors
+            return {
+                'stations': [],
+                'current_conditions': {
+                    'avg_temperature': 20,
+                    'avg_humidity': 50,
+                    'avg_wind_speed': 10,
+                    'max_wind_speed': 15,
+                    'dominant_wind_direction': 0
+                },
+                'fire_weather': {
+                    'max_fosberg': 30,
+                    'avg_fosberg': 20,
+                    'red_flag_warning_count': 0
+                },
+                'metadata': {
+                    'source': 'Open-Meteo',
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
+                }
+            }
 
     async def _collect_terrain_data(self, bounds: Dict) -> Dict:
         cache_key = f"terrain:{bounds['north']}:{bounds['south']}:{bounds['east']}:{bounds['west']}"

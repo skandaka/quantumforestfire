@@ -69,11 +69,11 @@ async def lifespan(app: FastAPI):
 
     # Start background tasks
     # The loop functions are defined below main app creation
-    app.state.background_tasks = [
-        asyncio.create_task(data_collection_loop(app.state.data_manager)),
-        asyncio.create_task(quantum_prediction_loop(app)),
-        asyncio.create_task(websocket_broadcast_loop(app))
-    ]
+    # app.state.background_tasks = [
+    #     asyncio.create_task(data_collection_loop(app.state.data_manager)),
+    #     asyncio.create_task(quantum_prediction_loop(app)),
+    #     asyncio.create_task(websocket_broadcast_loop(app))
+    # ]
 
     logger.info("✅ All systems initialized successfully!")
 
