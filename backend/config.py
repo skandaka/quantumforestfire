@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     enable_performance_monitoring: bool = Field(default=True, alias="ENABLE_MONITORING")
     metrics_export_interval: int = Field(default=60, alias="METRICS_EXPORT_INTERVAL")
     sentry_dsn: Optional[str] = Field(default=None, alias="SENTRY_DSN")
-
+    metrics_broadcast_interval: int = Field(default=5, alias="METRICS_BROADCAST_INTERVAL")  # seconds
     # Security Settings
     secret_key: str = Field(
         default="quantum-fire-secret-key-change-in-production",

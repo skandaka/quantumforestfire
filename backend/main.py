@@ -67,13 +67,12 @@ async def lifespan(app: FastAPI):
     # Initialize a shared list for active WebSocket connections
     app.state.active_websockets: List[WebSocket] = []
 
-    # Start background tasks
     # The loop functions are defined below main app creation
-    # app.state.background_tasks = [
-    #     asyncio.create_task(data_collection_loop(app.state.data_manager)),
-    #     asyncio.create_task(quantum_prediction_loop(app)),
-    #     asyncio.create_task(websocket_broadcast_loop(app))
-    # ]
+    app.state.background_tasks = [
+        asyncio.create_task(data_collection_loop(app.state.data_manager)),
+        asyncio.create_task(quantum_prediction_loop(app)),
+        asyncio.create_task(websocket_broadcast_loop(app))
+    ]
 
     logger.info("✅ All systems initialized successfully!")
 
@@ -134,7 +133,10 @@ async def global_exception_handler(request: Request, exc: Exception):
             "timestamp": datetime.utcnow().isoformat()
         }
     )
-
+@app.get("/api/metrics", tags=["System"])
+async def get_metrics(request: Request):
+    """Get system performance metrics"""
+    return await request.app.state.performance_monitor.get_metrics()
 # --- API Routers ---
 app.include_router(prediction_endpoints.router, prefix="/api/predictions", tags=["Predictions"])
 app.include_router(validation_endpoints.router, prefix="/api/validation", tags=["Validation"])

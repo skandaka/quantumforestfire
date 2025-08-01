@@ -26,8 +26,18 @@ async def get_fire_data(dm: RealTimeDataManager = Depends(get_data_manager)):
     try:
         fire_data = await dm.get_latest_fire_data()
         if not fire_data:
-            # You could optionally trigger a collection here, but it's better to let the background task handle it
-            raise HTTPException(status_code=404, detail="Fire data not yet available. Please try again shortly.")
+            # Return empty data structure instead of raising HTTPException
+            return {
+                'status': 'no_data',
+                'data': {
+                    'active_fires': [],
+                    'metadata': {
+                        'source': 'NASA FIRMS',
+                        'message': 'Fire data not yet available. Please try again shortly.'
+                    }
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }
         return {
             'status': 'success',
             'data': fire_data,
@@ -35,7 +45,17 @@ async def get_fire_data(dm: RealTimeDataManager = Depends(get_data_manager)):
         }
     except Exception as e:
         logger.error(f"Error getting fire data: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred while fetching fire data.")
+        # Return error in response body instead of raising
+        return {
+            'status': 'error',
+            'data': {
+                'active_fires': [],
+                'metadata': {
+                    'error': str(e)
+                }
+            },
+            'timestamp': datetime.utcnow().isoformat()
+        }
 
 @router.get("/weather", response_model=Dict[str, Any], summary="Get Latest Weather Data")
 async def get_weather_data(dm: RealTimeDataManager = Depends(get_data_manager)):
@@ -43,7 +63,25 @@ async def get_weather_data(dm: RealTimeDataManager = Depends(get_data_manager)):
     try:
         weather_data = await dm.get_latest_weather_data()
         if not weather_data:
-            raise HTTPException(status_code=404, detail="Weather data not yet available. Please try again shortly.")
+            # Return empty data structure instead of raising HTTPException
+            return {
+                'status': 'no_data',
+                'data': {
+                    'stations': [],
+                    'current_conditions': {
+                        'avg_temperature': 20,
+                        'avg_humidity': 50,
+                        'avg_wind_speed': 10,
+                        'max_wind_speed': 15,
+                        'dominant_wind_direction': 0
+                    },
+                    'metadata': {
+                        'source': 'NOAA',
+                        'message': 'Weather data not yet available. Please try again shortly.'
+                    }
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }
         return {
             'status': 'success',
             'data': weather_data,
@@ -51,7 +89,24 @@ async def get_weather_data(dm: RealTimeDataManager = Depends(get_data_manager)):
         }
     except Exception as e:
         logger.error(f"Error getting weather data: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred while fetching weather data.")
+        # Return error in response body instead of raising
+        return {
+            'status': 'error',
+            'data': {
+                'stations': [],
+                'current_conditions': {
+                    'avg_temperature': 20,
+                    'avg_humidity': 50,
+                    'avg_wind_speed': 10,
+                    'max_wind_speed': 15,
+                    'dominant_wind_direction': 0
+                },
+                'metadata': {
+                    'error': str(e)
+                }
+            },
+            'timestamp': datetime.utcnow().isoformat()
+        }
 
 @router.get("/terrain", response_model=Dict[str, Any], summary="Get Terrain Data for a Location")
 async def get_terrain_data(latitude: float, longitude: float, radius_km: float = 10, dm: RealTimeDataManager = Depends(get_data_manager)):
@@ -66,7 +121,12 @@ async def get_terrain_data(latitude: float, longitude: float, radius_km: float =
         }
     except Exception as e:
         logger.error(f"Error getting terrain data: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred while fetching terrain data.")
+        return {
+            'status': 'error',
+            'data': {},
+            'location': {'latitude': latitude, 'longitude': longitude},
+            'timestamp': datetime.utcnow().isoformat()
+        }
 
 @router.get("/location/{latitude}/{longitude}", response_model=Dict[str, Any], summary="Get All Data for a Location")
 async def get_location_data(latitude: float, longitude: float, radius_km: float = 50, dm: RealTimeDataManager = Depends(get_data_manager)):
@@ -80,7 +140,11 @@ async def get_location_data(latitude: float, longitude: float, radius_km: float 
         }
     except Exception as e:
         logger.error(f"Error getting location data: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred while fetching location data.")
+        return {
+            'status': 'error',
+            'data': {},
+            'timestamp': datetime.utcnow().isoformat()
+        }
 
 @router.post("/refresh", response_model=Dict[str, Any], summary="Force Data Refresh")
 async def refresh_data(dm: RealTimeDataManager = Depends(get_data_manager)):
@@ -100,4 +164,9 @@ async def refresh_data(dm: RealTimeDataManager = Depends(get_data_manager)):
         }
     except Exception as e:
         logger.error(f"Error during forced data refresh: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An error occurred during the data refresh process.")
+        return {
+            'status': 'error',
+            'message': 'Data refresh failed',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }

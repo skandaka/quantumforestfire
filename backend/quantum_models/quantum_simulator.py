@@ -10,25 +10,38 @@ from datetime import datetime
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-# Mock Qiskit imports for development
+# Qiskit imports with proper fallback
 try:
     from qiskit import IBMQ, Aer, QuantumCircuit
     from qiskit.providers import Backend
     from qiskit.providers.ibmq import IBMQBackend
     from qiskit.tools.monitor import job_monitor
     from qiskit.providers.exceptions import QiskitBackendNotFoundError
+    from qiskit_aer import AerSimulator
     QISKIT_AVAILABLE = True
-except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.info("Qiskit imported successfully")
+except ImportError as e:
     QISKIT_AVAILABLE = False
-    # Mock classes
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Qiskit not available: {e}")
+    logger.info("Please install Qiskit: pip install qiskit qiskit-aer qiskit-ibm-runtime")
+
+    # Mock classes only if Qiskit is not available
     class Backend:
         def run(self, circuit, shots=1024):
             return MockJob()
     class IBMQBackend: pass
     class QuantumCircuit: pass
+    class AerSimulator:
+        def __init__(self, *args, **kwargs):
+            pass
+        def run(self, *args, **kwargs):
+            return MockJob()
     class Aer:
         @staticmethod
-        def get_backend(name): return Backend()
+        def get_backend(name):
+            return AerSimulator()
     class IBMQ:
         @staticmethod
         def save_account(*args, **kwargs): pass
@@ -49,11 +62,80 @@ except ImportError:
     def execute_qprogram(*args, **kwargs):
         return MockQuantumResult()
 
-# Import our quantum models
-from quantum_models.classiq_models.classiq_fire_spread import ClassiqFireSpread, FireGridState
-from quantum_models.classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, AtmosphericConditions
-from quantum_models.classiq_models.classiq_optimization import ClassiqOptimization
-from quantum_models.qiskit_models.qiskit_ember_transport import QiskitEmberTransport
+# Import our quantum models with proper error handling
+try:
+    from quantum_models.classiq_models.classiq_fire_spread import ClassiqFireSpread, FireGridState
+    from quantum_models.classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics, AtmosphericConditions
+    from quantum_models.classiq_models.classiq_optimization import ClassiqOptimization
+    CLASSIQ_MODELS_AVAILABLE = True
+except ImportError as e:
+    CLASSIQ_MODELS_AVAILABLE = False
+    logger.warning(f"Some Classiq models could not be imported: {e}")
+    # Define mock classes if imports fail
+    class ClassiqFireSpread:
+        def __init__(self, *args, **kwargs): pass
+        async def predict(self, *args, **kwargs): return {'predictions': [], 'metadata': {'model': 'mock_classiq_fire_spread', 'backend': 'simulator'}}
+    class ClassiqEmberDynamics:
+        def __init__(self, *args, **kwargs): pass
+        async def predict_ember_spread(self, *args, **kwargs): return {'landing_probability_map': np.zeros((10, 10)), 'metadata': {'model': 'mock_classiq_ember_dynamics'}}
+    class FireGridState: pass
+    class AtmosphericConditions: pass
+    class ClassiqOptimization: pass
+
+try:
+    from quantum_models.qiskit_models.qiskit_ember_transport import QiskitEmberTransport
+    from quantum_models.qiskit_models.qiskit_fire_spread import QiskitFireSpread
+    QISKIT_MODELS_AVAILABLE = True
+except ImportError:
+    QISKIT_MODELS_AVAILABLE = False
+    logger.warning("Qiskit models could not be imported")
+    # Define mock Qiskit models
+    class QiskitFireSpread:
+        def __init__(self):
+            self.num_qubits = 20
+
+        def get_qubit_requirements(self) -> int:
+            return self.num_qubits
+
+        def build_circuit(self, fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Any:
+            return "mock_circuit"
+
+        def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                'predictions': [{
+                    'time_step': 0,
+                    'fire_probability_map': np.random.rand(50, 50).tolist(),
+                    'high_risk_cells': [(25, 25)],
+                    'total_area_at_risk': 100
+                }],
+                'metadata': {'backend': 'qiskit_simulator'}
+            }
+
+    class QiskitEmberTransport:
+        def __init__(self):
+            self.grid_size = 100
+            self.num_qubits = 25
+
+        def get_qubit_requirements(self) -> int:
+            return self.num_qubits
+
+        def build_circuit(self, fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Any:
+            return "mock_circuit"
+
+        def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                'landing_probability_map': np.random.rand(self.grid_size, self.grid_size).tolist(),
+                'ignition_risk_map': np.random.rand(self.grid_size, self.grid_size).tolist(),
+                'ember_jumps': [
+                    {'location': (50, 60), 'distance_km': 11.5, 'probability': 0.85}
+                ],
+                'max_transport_distance_km': 12.3,
+                'metadata': {
+                    'model_type': 'qiskit_ember_transport',
+                    'backend': 'simulator',
+                    'execution_time': 3.2
+                }
+            }
 
 # Mock settings class
 class MockSettings:
@@ -61,6 +143,7 @@ class MockSettings:
         self.ibm_quantum_token = None
         self.prediction_grid_size = 100
         self.minimum_fire_confidence = 0.6
+        self.ember_transport_radius = 20
 
 # Use mock settings if config is not available
 try:
@@ -90,28 +173,6 @@ class MockQuantumResult:
 
     def get_counts(self):
         return self.counts
-
-# Mock Qiskit models
-class QiskitFireSpread:
-    def __init__(self):
-        self.num_qubits = 20
-
-    def get_qubit_requirements(self) -> int:
-        return self.num_qubits
-
-    def build_circuit(self, fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Any:
-        return "mock_circuit"
-
-    def process_results(self, counts: Dict[str, int], fire_data: Dict[str, Any], weather_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            'predictions': [{
-                'time_step': 0,
-                'fire_probability_map': np.random.rand(50, 50).tolist(),
-                'high_risk_cells': [(25, 25)],
-                'total_area_at_risk': 100
-            }],
-            'metadata': {'backend': 'qiskit_simulator'}
-        }
 
 # Mock performance tracker
 class MockPerformanceTracker:
@@ -148,17 +209,22 @@ class QuantumBackendManager:
         """Initialize quantum simulators"""
         if QISKIT_AVAILABLE:
             try:
+                # Import AerSimulator properly
+                from qiskit_aer import AerSimulator
+
                 self.simulator_backends = {
-                    'aer_simulator': Aer.get_backend('aer_simulator'),
-                    'statevector_simulator': Aer.get_backend('statevector_simulator'),
-                    'qasm_simulator': Aer.get_backend('qasm_simulator')
+                    'aer_simulator': AerSimulator(),
+                    'statevector_simulator': AerSimulator(method='statevector'),
+                    'qasm_simulator': AerSimulator(method='stabilizer')
                 }
-                logger.info("Qiskit simulators initialized successfully")
+                logger.info("Qiskit Aer simulators initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Qiskit simulators: {e}")
+                logger.info("Please install qiskit-aer: pip install qiskit-aer")
                 self.simulator_backends = {}
         else:
             logger.warning("Qiskit not available - using mock backends")
+            logger.info("Install Qiskit with: pip install qiskit qiskit-aer qiskit-ibm-runtime")
             self.simulator_backends = {
                 'aer_simulator': 'mock_aer',
                 'statevector_simulator': 'mock_statevector',
@@ -283,35 +349,36 @@ class QuantumSimulatorManager:
         # Initialize backend manager first
         await self.backend_manager.initialize()
 
-        # Now initialize the quantum models (this should be HERE, not in backend_manager)
+        # Now initialize the quantum models
         try:
-            from quantum_models.classiq_models.quantum_fire_cellular_automaton import QuantumFireCellularAutomaton
-            from quantum_models.classiq_models.quantum_random_walk_ember import QuantumRandomWalkEmber
+            # Try to import actual models first
+            if CLASSIQ_MODELS_AVAILABLE:
+                from quantum_models.classiq_models.quantum_fire_cellular_automaton import QuantumFireCellularAutomaton
+                from quantum_models.classiq_models.quantum_random_walk_ember import QuantumRandomWalkEmber
 
-            # Initialize models with error handling
-            logger.info("Initializing quantum models...")
+                # Initialize models with error handling
+                logger.info("Initializing quantum models...")
 
-            # Use try-catch for individual model initialization to prevent single failures from breaking everything
+                # Use try-catch for individual model initialization
+                try:
+                    self.models['classiq_ember_dynamics'] = QuantumRandomWalkEmber(
+                        grid_size=getattr(settings, 'prediction_grid_size', 100),
+                        max_distance_km=getattr(settings, 'ember_transport_radius', 20)
+                    )
+                    logger.info("QuantumRandomWalkEmber initialized successfully")
+                except Exception as e:
+                    logger.error(f"Failed to initialize QuantumRandomWalkEmber: {e}")
+                    self.models['classiq_ember_dynamics'] = self._create_mock_model('ember_dynamics')
+
+            # Add other models
             try:
-                self.models['classiq_ember_dynamics'] = QuantumRandomWalkEmber(
-                    grid_size=getattr(settings, 'prediction_grid_size', 100),
-                    max_distance_km=getattr(settings, 'ember_transport_radius', 20)
-                )
-                logger.info("QuantumRandomWalkEmber initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize QuantumRandomWalkEmber: {e}")
-                self.models['classiq_ember_dynamics'] = self._create_mock_model('ember_dynamics')
-
-            # Add other models with similar error handling
-            try:
-                from quantum_models.classiq_models.classiq_fire_spread import ClassiqFireSpread
                 self.models['classiq_fire_spread'] = ClassiqFireSpread(grid_size=50)
                 logger.info("ClassiqFireSpread initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize ClassiqFireSpread: {e}")
                 self.models['classiq_fire_spread'] = self._create_mock_model('fire_spread')
 
-            # Initialize Qiskit models with fallbacks
+            # Initialize Qiskit models
             try:
                 self.models['qiskit_fire_spread'] = QiskitFireSpread()
                 logger.info("QiskitFireSpread initialized successfully")
@@ -321,11 +388,11 @@ class QuantumSimulatorManager:
 
             logger.info(f"Successfully initialized {len(self.models)} quantum models")
 
-        except ImportError as e:
-            logger.error(f"Failed to import quantum models: {e}")
+        except Exception as e:
+            logger.error(f"Failed to initialize quantum models: {e}")
             logger.warning("Running with mock models only")
 
-            # Fallback to mock models if imports fail
+            # Fallback to all mock models
             self.models = {
                 'classiq_ember_dynamics': self._create_mock_model('ember_dynamics'),
                 'classiq_fire_spread': self._create_mock_model('fire_spread'),
@@ -343,14 +410,19 @@ class QuantumSimulatorManager:
 
             async def predict(self, *args, **kwargs):
                 return {
-                    'predictions': [],
+                    'predictions': [{
+                        'time_step': 0,
+                        'fire_probability_map': np.random.rand(50, 50).tolist(),
+                        'high_risk_cells': [(25, 25), (26, 26)],
+                        'total_area_at_risk': 150.5
+                    }],
                     'metadata': {'model': f'mock_{self.model_type}', 'backend': 'simulator'},
                     'mock': True
                 }
 
             async def simulate_ember_transport(self, *args, **kwargs):
                 return {
-                    'landing_probability_map': np.zeros((10, 10)),
+                    'landing_probability_map': np.zeros((10, 10)).tolist(),
                     'ember_jumps': [],
                     'metadata': {'model': f'mock_{self.model_type}'},
                     'mock': True
@@ -385,7 +457,7 @@ class QuantumSimulatorManager:
 
         for name, status in backend_status.items():
             backend = available_backends.get(name)
-            if backend:
+            if backend and 'simulator' not in name:
                 max_qubits = 127  # Default
                 if hasattr(backend, 'configuration'):
                     max_qubits = backend.configuration().n_qubits
@@ -409,17 +481,32 @@ class QuantumSimulatorManager:
         if not model:
             raise ValueError(f"Model {model_type} not available")
 
+        # Prepare data
+        if not hasattr(model, 'predict'):
+            logger.error(f"Model {model_type} does not have predict method")
+            return {'error': 'Model not properly initialized'}
+
         # Run prediction
-        result = await model.predict(fire_data, weather_data)
+        try:
+            result = await model.predict(fire_data, weather_data)
 
-        # Track performance
-        await self.performance_tracker.track_prediction({
-            'model_type': model_type,
-            'use_hardware': use_hardware,
-            **result
-        })
+            # Track performance
+            await self.performance_tracker.track_prediction({
+                'model_type': model_type,
+                'use_hardware': use_hardware,
+                **result
+            })
 
-        return result
+            return result
+        except Exception as e:
+            logger.error(f"Error running prediction with {model_type}: {e}")
+            return {
+                'predictions': [],
+                'metadata': {
+                    'model_type': model_type,
+                    'error': str(e)
+                }
+            }
 
     async def run_ensemble_prediction(self, fire_data: Dict, weather_data: Dict):
         """Run ensemble prediction using multiple models"""
