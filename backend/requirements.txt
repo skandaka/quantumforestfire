@@ -1,3 +1,4 @@
+# backend/requirements.txt
 # Core Dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
@@ -5,11 +6,13 @@ python-dotenv==1.0.0
 pydantic>=2.9.0,<2.10.0
 pydantic-settings>=2.0.3
 
-# Quantum Computing - Updated versions
+# Quantum Computing - Fixed versions
 qiskit==1.0.2
 qiskit-aer==0.14.0.1
-qiskit-ibm-provider==0.10.0
-classiq>=0.87.0
+# Remove qiskit-terra as it's included in qiskit 1.0+
+# qiskit-ibm-provider is replaced by qiskit-ibm-runtime in newer versions
+qiskit-ibm-runtime==0.20.0
+classiq>=0.41.0
 numpy==1.26.2
 scipy==1.11.4
 
@@ -42,6 +45,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 email-validator==2.1.0
 python-dateutil==2.8.2
+tenacity==8.2.3
 
 # Development
 pytest==7.4.3

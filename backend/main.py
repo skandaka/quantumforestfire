@@ -76,6 +76,19 @@ async def lifespan(app: FastAPI):
 
     logger.info("✅ All systems initialized successfully!")
 
+    # Add this to backend/main.py in the lifespan function after initializing data_manager:
+
+    # Initialize quantum simulator with REAL backends
+    logger.info("🌌 Initializing quantum simulators with REAL backends...")
+    app.state.quantum_manager = QuantumSimulatorManager()
+    try:
+        await app.state.quantum_manager.initialize()
+        backends = await app.state.quantum_manager.get_available_backends()
+        logger.info(f"✅ Quantum system initialized with {len(backends)} real backends")
+    except Exception as e:
+        logger.error(f"Failed to initialize quantum system: {e}")
+        # Continue running with limited functionality
+
     yield # The application runs here
 
     # --- Shutdown ---
