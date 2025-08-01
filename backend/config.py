@@ -8,7 +8,13 @@ from pydantic import Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import timedelta
 import os
-import json
+from dotenv import load_dotenv
+
+# Manually and reliably load the .env file next to this config file.
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+
 
 
 class Settings(BaseSettings):
@@ -43,6 +49,7 @@ class Settings(BaseSettings):
 
     # Quantum Platform Credentials
     ibm_quantum_token: Optional[str] = Field(default=None, alias="IBM_QUANTUM_TOKEN")
+    ibm_quantum_crn: Optional[str] = Field(default=None, alias="IBM_QUANTUM_CRN")  # <-- 1. LINE ADDED HERE
     ibm_quantum_hub: str = Field(default="ibm-q", alias="IBM_QUANTUM_HUB")
     ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
     ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
@@ -225,6 +232,7 @@ class Settings(BaseSettings):
             },
             "ibm": {
                 "token": self.ibm_quantum_token,
+                "crn": self.ibm_quantum_crn, # <-- 2. I've also updated this helper function
                 "hub": self.ibm_quantum_hub,
                 "group": self.ibm_quantum_group,
                 "project": self.ibm_quantum_project
@@ -250,7 +258,7 @@ class Settings(BaseSettings):
         return self.environment == "development"
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(__file__), ".env")
         env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"

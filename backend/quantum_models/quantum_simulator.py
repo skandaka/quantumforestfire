@@ -8,6 +8,7 @@ import asyncio
 import logging
 from typing import Dict, List, Any, Union, Optional
 from datetime import datetime
+from config import settings
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,10 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit.providers import Backend, JobStatus
 from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel
-from qiskit.circuit.library import TwoLocal
-from qiskit.quantum_info import SparsePauliOp
-from qiskit.primitives import Sampler
+import os
 
 # IBM Quantum imports
 try:
@@ -46,6 +44,7 @@ class QuantumBackendManager:
     def __init__(self):
         self.aer_backends: Dict[str, AerSimulator] = {}
         self.ibm_service: Optional[QiskitRuntimeService] = None
+        self.settings = settings
         self.available_backends: Dict[str, Any] = {}
         self.backend_status: Dict[str, Dict[str, Any]] = {}
 
@@ -131,11 +130,11 @@ class QuantumBackendManager:
         """Initialize IBM Quantum Runtime Service"""
         try:
             # Initialize the service
-            self.ibm_service = QiskitRuntimeService(
+            self.service = QiskitRuntimeService(
                 channel="ibm_quantum",
-                token=settings.ibm_quantum_token
+                token=settings.IBM_QUANTUM_TOKEN,  # <-- Use the imported 'settings'
+                instance=settings.IBM_QUANTUM_CRN  # <-- Use the imported 'settings'
             )
-
             # Get available backends
             backends = self.ibm_service.backends()
 
@@ -294,7 +293,7 @@ class QuantumSimulatorManager:
     async def initialize(self):
         """Initialize all quantum models and backends"""
         logger.info("Initializing Quantum Simulator Manager with REAL backends...")
-
+        print(f"DEBUG: Attempting to load token: {os.getenv('IBM_QUANTUM_TOKEN')}")
         # Initialize backend manager
         await self.backend_manager.initialize()
 

@@ -147,8 +147,7 @@ class QiskitFireSpread:
                 final_bindings[param] = 0.1
 
         # Bind parameters
-        qc = qc.bind_parameters(final_bindings)
-
+        qc.assign_parameters(final_bindings, inplace=True)
         return qc
 
     def _calculate_fire_intensity_for_qubit(self, qubit_idx: int, active_fires: List[Dict]) -> float:

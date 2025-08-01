@@ -3,10 +3,13 @@
 """
 Initialize and test REAL quantum components
 """
-
 import asyncio
 import logging
-from quantum_models.quantum_simulator import QuantumSimulatorManager
+from .quantum_models.quantum_simulator import QuantumSimulatorManager
+from config import settings  # <-- This import is correct here
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,7 +20,7 @@ async def test_quantum_system():
     logger.info("🚀 Testing REAL Quantum System...")
 
     # Initialize quantum manager
-    quantum_manager = QuantumSimulatorManager()
+    quantum_manager = QuantumSimulatorManager(settings=settings)
     await quantum_manager.initialize()
 
     # Check available backends
