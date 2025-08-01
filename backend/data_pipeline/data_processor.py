@@ -254,8 +254,7 @@ class FireDataProcessor:
         # Calculate combined risk grid
         integrated['combined_risk_grid'] = self._calculate_combined_risk(integrated)
 
-        # CONFIRMED FIX: Convert all numpy arrays in the dictionary to lists before returning.
-        # This prevents the JSON serialization error when caching to Redis.
+        # Convert all numpy arrays to lists before returning
         return {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in integrated.items()}
 
     def _calculate_fire_intensity(

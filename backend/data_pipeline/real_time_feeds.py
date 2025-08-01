@@ -77,6 +77,17 @@ class RealTimeDataManager:
         collectors_ok = all(c.is_healthy() for c in self.collectors.values())
         return self.is_running and collectors_ok
 
+    def _convert_numpy_to_list(self, obj):
+        """Convert numpy arrays to lists for JSON serialization"""
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {k: self._convert_numpy_to_list(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_numpy_to_list(v) for v in obj]
+        else:
+            return obj
+
     async def collect_all_data(self) -> Dict[str, Any]:
         """Coordinates a full data collection cycle from all sources in parallel."""
         start_time = datetime.utcnow()
@@ -290,14 +301,24 @@ class RealTimeDataManager:
 
     async def _collect_terrain_data(self, bounds: Dict) -> Dict:
         cache_key = f"terrain:{bounds['north']}:{bounds['south']}:{bounds['east']}:{bounds['west']}"
-        if self.redis_client and (cached := await self.redis_client.get(cache_key)):
-            return json.loads(cached)
+
+        if self.redis_client:
+            cached = await self.redis_client.get(cache_key)
+            if cached:
+                return json.loads(cached)
 
         terrain_data = await self.collectors['usgs_terrain'].get_terrain_data(bounds, resolution=30)
         terrain_data['fuel'] = await self.collectors['usgs_terrain'].get_fuel_data(bounds)
 
+        # Convert numpy arrays to lists before caching
+        terrain_data_serializable = self._convert_numpy_to_list(terrain_data)
+
         if self.redis_client:
-            await self.redis_client.setex(cache_key, timedelta(days=7), json.dumps(terrain_data))
+            try:
+                await self.redis_client.setex(cache_key, timedelta(days=7), json.dumps(terrain_data_serializable))
+            except Exception as e:
+                logger.error(f"Failed to cache terrain data: {e}")
+
         return terrain_data
 
     async def get_latest_fire_data(self) -> Optional[Dict[str, Any]]:
@@ -356,11 +377,20 @@ class RealTimeDataManager:
         }
 
     async def _cache_data(self, data: Dict[str, Any]):
-        if not self.redis_client: return
-        if 'fire' in data:
-            await self.redis_client.setex("latest:fire", settings.cache_ttl, json.dumps(data['fire']))
-        if 'weather' in data:
-            await self.redis_client.setex("latest:weather", settings.cache_ttl, json.dumps(data['weather']))
+        if not self.redis_client:
+            return
+
+        try:
+            if 'fire' in data:
+                fire_data_serializable = self._convert_numpy_to_list(data['fire'])
+                await self.redis_client.setex("latest:fire", settings.cache_ttl, json.dumps(fire_data_serializable))
+
+            if 'weather' in data:
+                weather_data_serializable = self._convert_numpy_to_list(data['weather'])
+                await self.redis_client.setex("latest:weather", settings.cache_ttl,
+                                              json.dumps(weather_data_serializable))
+        except Exception as e:
+            logger.error(f"Error caching data: {e}")
 
     async def _broadcast_to_streams(self, data: Dict[str, Any], stream_type: str = 'all'):
         streams_to_notify = self._stream_subscribers.keys() if stream_type == 'all' else [stream_type]

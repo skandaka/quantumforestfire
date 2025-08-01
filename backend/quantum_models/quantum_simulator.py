@@ -11,45 +11,57 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 # Qiskit imports with proper fallback
+# Qiskit imports with proper fallback
 try:
-    from qiskit import IBMQ, Aer, QuantumCircuit
+    from qiskit import QuantumCircuit, IBMQ
     from qiskit.providers import Backend
-    from qiskit.providers.ibmq import IBMQBackend
-    from qiskit.tools.monitor import job_monitor
-    from qiskit.providers.exceptions import QiskitBackendNotFoundError
     from qiskit_aer import AerSimulator
+    from qiskit.providers.exceptions import BackendError
+
+    # New way to import IBM Quantum
+    try:
+        from qiskit_ibm_provider import IBMProvider
+
+        IBMQ_AVAILABLE = True
+    except ImportError:
+        IBMQ_AVAILABLE = False
+        IBMProvider = None
+
     QISKIT_AVAILABLE = True
     logger = logging.getLogger(__name__)
     logger.info("Qiskit imported successfully")
 except ImportError as e:
     QISKIT_AVAILABLE = False
+    IBMQ_AVAILABLE = False
     logger = logging.getLogger(__name__)
     logger.warning(f"Qiskit not available: {e}")
-    logger.info("Please install Qiskit: pip install qiskit qiskit-aer qiskit-ibm-runtime")
+    logger.info("Please install Qiskit: pip install qiskit qiskit-aer qiskit-ibm-provider")
+
 
     # Mock classes only if Qiskit is not available
     class Backend:
         def run(self, circuit, shots=1024):
             return MockJob()
-    class IBMQBackend: pass
-    class QuantumCircuit: pass
+
+
+    class QuantumCircuit:
+        pass
+
+
     class AerSimulator:
         def __init__(self, *args, **kwargs):
             pass
+
         def run(self, *args, **kwargs):
             return MockJob()
-    class Aer:
-        @staticmethod
-        def get_backend(name):
-            return AerSimulator()
-    class IBMQ:
-        @staticmethod
-        def save_account(*args, **kwargs): pass
-        @staticmethod
-        def load_account(): return None
-        @staticmethod
-        def providers(): return []
-    def job_monitor(*args, **kwargs): pass
+
+
+    class IBMProvider:
+        pass
+
+
+    def job_monitor(*args, **kwargs):
+        pass
 
 # Mock Classiq imports
 try:
@@ -224,7 +236,7 @@ class QuantumBackendManager:
                 self.simulator_backends = {}
         else:
             logger.warning("Qiskit not available - using mock backends")
-            logger.info("Install Qiskit with: pip install qiskit qiskit-aer qiskit-ibm-runtime")
+            logger.info("Install Qiskit with: pip install qiskit qiskit-aer qiskit-ibm-provider")
             self.simulator_backends = {
                 'aer_simulator': 'mock_aer',
                 'statevector_simulator': 'mock_statevector',
@@ -239,15 +251,16 @@ class QuantumBackendManager:
                 self.available_backends[name] = backend
 
             # Initialize IBM Quantum if token available
-            if hasattr(settings, 'ibm_quantum_token') and settings.ibm_quantum_token and QISKIT_AVAILABLE:
+            if hasattr(settings,
+                       'ibm_quantum_token') and settings.ibm_quantum_token and QISKIT_AVAILABLE and IBMQ_AVAILABLE:
                 try:
-                    IBMQ.save_account(settings.ibm_quantum_token, overwrite=True)
-                    self.ibmq_provider = IBMQ.load_account()
+                    # New way to authenticate with IBM Quantum
+                    provider = IBMProvider(token=settings.ibm_quantum_token)
 
                     # Get available backends
-                    backends = self.ibmq_provider.backends()
+                    backends = provider.backends()
                     for backend in backends:
-                        self.available_backends[backend.name()] = backend
+                        self.available_backends[backend.name] = backend
 
                     logger.info(f"Connected to IBM Quantum with {len(backends)} hardware backends")
 

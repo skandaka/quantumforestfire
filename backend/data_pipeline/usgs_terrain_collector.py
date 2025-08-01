@@ -87,8 +87,8 @@ class USGSTerrainCollector:
                 }
             }
 
-    async def _get_elevation_point(self, lat: float, lon: float) -> float:
-        """Get elevation for a single point"""
+    async def _get_elevation_at_point(self, lat: float, lon: float) -> float:
+        """Get elevation for a single point from USGS"""
         try:
             params = {
                 'x': lon,
@@ -97,29 +97,29 @@ class USGSTerrainCollector:
                 'output': 'json'
             }
 
-            async with self.session.get(self.elevation_url, params=params) as response:
+            # USGS Elevation Point Query Service
+            elevation_url = "https://epqs.nationalmap.gov/v1/json"
+
+            async with self.session.get(elevation_url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    elevation_str = data.get('USGS_Elevation_Point_Query_Service', {}).get('Elevation_Query', {}).get(
-                        'Elevation', 'NoData')
 
-                    # Handle NoData responses
-                    if elevation_str == 'NoData' or elevation_str is None:
-                        logger.warning(f"No elevation data available for coordinates {lat}, {lon}")
-                        return 0.0  # Default to sea level
-
-                    try:
-                        return float(elevation_str)
-                    except (ValueError, TypeError):
-                        logger.warning(f"Invalid elevation value '{elevation_str}' for coordinates {lat}, {lon}")
+                    # Extract elevation value
+                    if 'value' in data:
+                        try:
+                            return float(data['value'])
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid elevation value for {lat}, {lon}")
+                            return 0.0
+                    else:
                         return 0.0
                 else:
-                    logger.error(f"USGS elevation API returned status {response.status}")
+                    logger.error(f"USGS API returned status {response.status}")
                     return 0.0
 
         except Exception as e:
             logger.error(f"Error getting elevation: {str(e)}")
-            return 0.0  # Return default elevation instead of failing
+            return 0.0
 
 
     async def get_fuel_data(self, bounds: Dict[str, float]) -> Dict[str, Any]:
