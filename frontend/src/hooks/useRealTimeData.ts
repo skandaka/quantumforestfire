@@ -1,354 +1,300 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { useFirePredictionStore } from '@/lib/store';
-import toast from 'react-hot-toast';
+import { create } from 'zustand'
+import { immer } from 'zustand/middleware/immer'
+import axios, { AxiosError } from 'axios'
+import { useEffect, useRef } from 'react'
+import { LngLatLike } from 'mapbox-gl'
 
-// --- Type Definitions ---
-interface Alert {
-  id: string;
-  type: 'fire' | 'weather' | 'evacuation' | 'high_risk';
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  title: string;
-  message: string;
+// --- TYPE DEFINITIONS ---
+// Defines the shape of data fetched from the real-time data endpoint.
+
+export interface ActiveFire {
+  id: string
+  latitude: number
+  longitude: number
+  brightness: number // Kelvin
+  confidence: number // 0-100%
+  source: 'NASA FIRMS' | 'CAL FIRE'
+  timestamp: string
+}
+
+export interface WeatherStation {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  temperature: number // Celsius
+  humidity: number // Percentage
+  wind_speed: number // mph
+  wind_direction: string // e.g., 'NW'
+}
+
+export interface HighRiskArea {
+  id: string
+  name: string
+  risk_level: number // 0.0 to 1.0
+  cause: 'Drought' | 'Wind Pattern' | 'High Fuel Load'
+  // A GeoJSON-compatible polygon definition
+  polygon: LngLatLike[]
+}
+
+export interface Alert {
+  id: string
+  title: string
+  message: string
+  severity: 'critical' | 'high' | 'moderate'
+  timestamp: string
   location?: {
-    latitude: number;
-    longitude: number;
-    name?: string;
-  };
-  timestamp: string;
-  probability?: number;
+    name: string
+    latitude: number
+    longitude: number
+  }
 }
 
-interface FireDataResponse {
-  data: {
-    active_fires: Array<{
-      id: string;
-      latitude: number;
-      longitude: number;
-      center_lat: number;
-      center_lon: number;
-      intensity: number;
-      area_hectares: number;
-      confidence: number;
-      brightness_temperature: number;
-      detection_time: string;
-      satellite: string;
-      frp: number;
-    }>;
-    metadata: {
-      source: string;
-      total_detections: number;
-      last_updated: string;
-    };
-  };
+// The comprehensive data structure for the entire real-time feed.
+export interface RealTimeData {
+  active_fires: ActiveFire[]
+  weather_stations: WeatherStation[]
+  high_risk_areas: HighRiskArea[]
+  alerts: Alert[]
+  current_conditions: {
+    avg_wind_speed: number
+    max_temp: number
+  }
 }
 
-interface WeatherDataResponse {
-  data: {
-    current_conditions: {
-      avg_temperature: number;
-      avg_humidity: number;
-      avg_wind_speed: number;
-      max_wind_speed: number;
-      dominant_wind_direction: number;
-    };
-    forecast: Array<{
-      time: string;
-      temperature: number;
-      humidity: number;
-      wind_speed: number;
-      wind_direction: number;
-    }>;
-  };
+// --- ZUSTAND STORE DEFINITION ---
+
+interface RealTimeDataState {
+  // --- STATE ---
+  fireData: RealTimeData | null
+  isLoading: boolean
+  error: string | null
+  lastFetchTimestamp: Date | null
+  systemStatus: 'operational' | 'degraded' | 'offline'
+
+  // --- ACTIONS ---
+
+  /**
+   * Fetches the latest real-time data from the backend.
+   */
+  fetchData: () => Promise<void>
 }
 
-export function useRealTimeData() {
-  const [activeAlerts, setActiveAlerts] = useState<Alert[]>([]);
-  const [activeFireCount, setActiveFireCount] = useState(0);
-  const [highRiskAreas, setHighRiskAreas] = useState(0);
-  const [weatherAlerts, setWeatherAlerts] = useState<any[]>([]);
-  const [systemStatus, setSystemStatus] = useState('operational');
-  const [isConnected, setIsConnected] = useState(false);
+const useRealTimeDataStore = create<RealTimeDataState>()(
+    immer((set, get) => ({
+      // --- INITIAL STATE ---
+      fireData: null,
+      isLoading: true,
+      error: null,
+      lastFetchTimestamp: null,
+      systemStatus: 'operational',
 
-  const [isLoadingFireData, setIsLoadingFireData] = useState(true);
-  const [isLoadingWeatherData, setIsLoadingWeatherData] = useState(true);
-
-  const {
-    setFireData,
-    setWeatherData,
-    addAlert,
-    fireData,
-    weatherData,
-  } = useFirePredictionStore();
-
-  // Enhanced data fetching with fallback
-  const fetchRealTimeData = useCallback(async () => {
-    try {
-      setIsLoadingFireData(true);
-      setIsLoadingWeatherData(true);
-      
-      // Try to fetch from backend
-      const fireResponse = await fetch('http://localhost:8000/api/data/fires');
-      const weatherResponse = await fetch('http://localhost:8000/api/data/weather');
-      
-      if (fireResponse.ok && weatherResponse.ok) {
-        const fireData = await fireResponse.json();
-        const weatherData = await weatherResponse.json();
-        
-        setFireData(fireData);
-        setWeatherData(weatherData);
-        setActiveFireCount(fireData.active_fires?.length || 0);
-        setIsConnected(true);
-        
-        // Generate alerts based on data
-        const newAlerts: Alert[] = [];
-        
-        fireData.active_fires?.forEach((fire: any) => {
-          if (fire.intensity > 0.7) {
-            newAlerts.push({
-              id: `fire_alert_${fire.id}`,
-              type: 'fire',
-              severity: fire.intensity > 0.9 ? 'critical' : 'high',
-              title: 'High Intensity Fire Detected',
-              message: `Fire with ${(fire.intensity * 100).toFixed(0)}% intensity detected`,
-              location: {
-                latitude: fire.center_lat,
-                longitude: fire.center_lon,
-                name: `Fire Zone ${fire.id}`
-              },
-              timestamp: fire.detection_time || new Date().toISOString()
-            });
-          }
-        });
-        
-        if (weatherData.current_conditions?.avg_wind_speed > 20) {
-          newAlerts.push({
-            id: 'wind_alert',
-            type: 'weather',
-            severity: 'high',
-            title: 'High Wind Conditions',
-            message: `Wind speed ${weatherData.current_conditions.avg_wind_speed} mph - increased fire risk`,
-            timestamp: new Date().toISOString()
-          });
+      // --- ACTION IMPLEMENTATIONS ---
+      fetchData: async () => {
+        // Prevent fetching if a request is already in flight.
+        if (get().isLoading && get().lastFetchTimestamp) {
+          return;
         }
-        
-        setActiveAlerts(newAlerts);
-        
-      } else {
-        throw new Error('Backend not available');
-      }
-    } catch (error) {
-      console.warn('Backend not available, using enhanced mock data');
-      setIsConnected(false);
-      
-      // Enhanced mock data
-      const mockFireData = {
-        active_fires: [
-          {
-            id: 'ca_fire_001',
-            latitude: 39.7596,
-            longitude: -121.6219,
-            center_lat: 39.7596,
-            center_lon: -121.6219,
-            intensity: 0.89,
-            area_hectares: 2850,
-            confidence: 0.94,
-            brightness_temperature: 445,
-            detection_time: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-            satellite: 'NASA MODIS',
-            frp: 680
-          },
-          {
-            id: 'ca_fire_002',
-            latitude: 39.7200,
-            longitude: -121.5800,
-            center_lat: 39.7200,
-            center_lon: -121.5800,
-            intensity: 0.71,
-            area_hectares: 1450,
-            confidence: 0.87,
-            brightness_temperature: 398,
-            detection_time: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-            satellite: 'NASA VIIRS',
-            frp: 420
-          },
-          {
-            id: 'ca_fire_003',
-            latitude: 38.9167,
-            longitude: -121.6167,
-            center_lat: 38.9167,
-            center_lon: -121.6167,
-            intensity: 0.62,
-            area_hectares: 980,
-            confidence: 0.85,
-            brightness_temperature: 385,
-            detection_time: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
-            satellite: 'NASA MODIS',
-            frp: 310
+
+        set((state) => {
+          state.isLoading = true
+          state.error = null
+        })
+
+        try {
+          const response = await axios.get('/api/data/real-time')
+
+          if (!response.data) {
+            throw new Error('No data returned from real-time endpoint.')
           }
-        ],
-        metadata: {
-          source: 'Enhanced Mock Data (Backend Unavailable)',
-          total_detections: 3,
-          last_updated: new Date().toISOString()
-        }
-      };
 
-      const mockWeatherData = {
-        current_conditions: {
-          avg_temperature: 32,
-          avg_humidity: 28,
-          avg_wind_speed: 22,
-          max_wind_speed: 35,
-          dominant_wind_direction: 45
-        },
-        forecast: [
-          {
-            time: new Date(Date.now() + 3600000).toISOString(),
-            temperature: 34,
-            humidity: 25,
-            wind_speed: 28,
-            wind_direction: 50
-          },
-          {
-            time: new Date(Date.now() + 7200000).toISOString(),
-            temperature: 35,
-            humidity: 22,
-            wind_speed: 32,
-            wind_direction: 55
+          set((state) => {
+            state.fireData = response.data
+            state.isLoading = false
+            state.lastFetchTimestamp = new Date()
+            state.systemStatus = 'operational'
+          })
+        } catch (err) {
+          console.error("Real-Time Data Fetch Error:", err)
+          let errorMessage = 'Failed to fetch live data feed.'
+          if (axios.isAxiosError(err)) {
+            errorMessage = err.response?.data?.error || err.message
+          } else if (err instanceof Error) {
+            errorMessage = err.message
           }
-        ]
-      };
 
-      setFireData(mockFireData);
-      setWeatherData(mockWeatherData);
-      setActiveFireCount(mockFireData.active_fires.length);
-      setHighRiskAreas(2);
-
-      // Generate mock alerts
-      const mockAlerts: Alert[] = [
-        {
-          id: 'alert_high_intensity',
-          type: 'fire',
-          severity: 'critical',
-          title: 'Critical Fire Intensity',
-          message: 'Fire CA_001 showing 89% intensity - immediate evacuation may be required',
-          location: {
-            latitude: 39.7596,
-            longitude: -121.6219,
-            name: 'Paradise Area'
-          },
-          timestamp: new Date().toISOString(),
-          probability: 0.89
-        },
-        {
-          id: 'alert_wind_conditions',
-          type: 'weather',
-          severity: 'high',
-          title: 'Dangerous Wind Conditions',
-          message: 'Wind speeds 22 mph with gusts to 35 mph - rapid fire spread possible',
-          timestamp: new Date().toISOString()
-        },
-        {
-          id: 'alert_quantum_prediction',
-          type: 'high_risk',
-          severity: 'high',
-          title: 'Quantum Model Alert',
-          message: 'High probability ember transport detected - new ignition risk elevated',
-          location: {
-            latitude: 39.8000,
-            longitude: -121.5500,
-            name: 'Potential Impact Zone'
-          },
-          timestamp: new Date().toISOString(),
-          probability: 0.78
+          set((state) => {
+            state.isLoading = false
+            state.error = errorMessage
+            state.systemStatus = 'degraded'
+          })
         }
-      ];
+      },
+    }))
+)
 
-      setActiveAlerts(mockAlerts);
-    } finally {
-      setIsLoadingFireData(false);
-      setIsLoadingWeatherData(false);
+/**
+ * --- CUSTOM HOOK FOR COMPONENT USAGE ---
+ * This is the primary hook that UI components will use. It wraps the Zustand store
+ * and adds logic for periodic polling.
+ *
+ * @param {number} pollInterval - The interval in milliseconds to poll for new data.
+ * @returns An object containing derived data and status flags for easy consumption.
+ */
+export const useRealTimeData = (pollInterval: number = 30000) => {
+  const store = useRealTimeDataStore()
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Effect to set up and tear down the polling interval.
+  useEffect(() => {
+    // Fetch data immediately on mount.
+    store.fetchData()
+
+    // Clear any existing interval before setting a new one.
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
     }
-  }, [setFireData, setWeatherData, addAlert]);
 
-  // Use direct effect instead of react-query for better control
-  useEffect(() => {
-    fetchRealTimeData();
-    
-    // Set up polling
-    const interval = setInterval(fetchRealTimeData, 30000);
-    
-    return () => clearInterval(interval);
-  }, [fetchRealTimeData]);
+    intervalRef.current = setInterval(() => {
+      store.fetchData()
+    }, pollInterval)
 
-  // --- Real-time Alert Subscription ---
-  useEffect(() => {
-    const unsubscribe = api.subscribeToAlerts((alert: any) => {
-      const newAlert: Alert = {
-        id: `alert_${Date.now()}`,
-        type: alert.type || 'fire',
-        severity: alert.severity || 'medium',
-        title: alert.title || 'New Alert',
-        message: alert.message || 'Alert received',
-        location: alert.location,
-        timestamp: new Date().toISOString(),
-      };
-
-      setActiveAlerts((prev) => [newAlert, ...prev].slice(0, 50));
-      addAlert(newAlert);
-
-      if (newAlert.severity === 'critical' || newAlert.severity === 'high') {
-        toast.error(newAlert.message, { duration: 10000 });
+    // Cleanup function to clear the interval when the component unmounts.
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
       }
-    });
-
-    return () => unsubscribe();
-  }, [addAlert]);
-
-  // --- Derived Data Calculation ---
-  useEffect(() => {
-    if (fireData?.active_fires) {
-      const highRisk = fireData.active_fires.filter(
-          (fire: any) => fire.intensity > 0.7 || fire.confidence > 0.8
-      ).length;
-      setHighRiskAreas(highRisk);
     }
-  }, [fireData]);
+  }, [pollInterval, store.fetchData])
 
-  // --- Mock Subscription for Updates ---
-  const subscribeToUpdates = useCallback((callback: (update: any) => void) => {
-    const interval = setInterval(() => {
-      if (activeAlerts.length > 0) {
-        callback({
-          type: 'alert',
-          data: activeAlerts[0],
-          severity: activeAlerts[0].severity,
-        });
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [activeAlerts]);
+  // --- DERIVED DATA SELECTORS ---
+  // This is more efficient than calculating in components, as it only re-computes when source data changes.
+  const activeFireCount = store.fireData?.active_fires?.length || 0
+  const activeAlerts = store.fireData?.alerts || []
+  const highRiskAreas = store.fireData?.high_risk_areas || []
 
   return {
-    // Data
-    fireData,
-    weatherData,
-    activeAlerts,
+    fireData: store.fireData,
+    weatherData: {
+      stations: store.fireData?.weather_stations || [],
+      current_conditions: store.fireData?.current_conditions,
+    },
     activeFireCount,
+    activeAlerts,
     highRiskAreas,
-    weatherAlerts,
-    systemStatus,
-    isConnected,
+    systemStatus: store.systemStatus,
+    isLoadingFireData: store.isLoading,
+    error: store.error,
+    lastFetchTimestamp: store.lastFetchTimestamp
+  }
+}
 
-    // Actions
-    subscribeToUpdates,
-    refetch: fetchRealTimeData,
 
-    // Loading states
-    isLoadingFireData,
-    isLoadingWeatherData,
+/**
+ * --- MOCKING FOR DEVELOPMENT ---
+ * Sets up a mock adapter for Axios to simulate the real-time data feed.
+ * This is essential for UI development and testing without a live backend.
+ */
+if (process.env.NODE_ENV === 'development') {
+  const MockAdapter = require('axios-mock-adapter')
+  const mock = new MockAdapter(axios, { delayResponse: 800 })
+
+  // --- Mock Data Generation Utilities ---
+  // These functions create realistic and varied mock data.
+
+  const getRandomCoordinate = (baseLat: number, baseLon: number, range: number) => ({
+    latitude: baseLat + (Math.random() - 0.5) * range,
+    longitude: baseLon + (Math.random() - 0.5) * range,
+  })
+
+  const generateMockFires = (count: number): ActiveFire[] => {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `fire_${i}_${Date.now()}`,
+      ...getRandomCoordinate(39.7, -121.5, 2.5), // Centered around Northern California
+      brightness: Math.floor(Math.random() * 100 + 300),
+      confidence: Math.floor(Math.random() * 50 + 50),
+      source: 'NASA FIRMS',
+      timestamp: new Date().toISOString(),
+    }))
+  }
+
+  const generateMockWeatherStations = (count: number): WeatherStation[] => {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `station_${i}`,
+      name: `Station #${i}`,
+      ...getRandomCoordinate(39.7, -121.5, 3),
+      temperature: Math.floor(Math.random() * 15 + 20),
+      humidity: Math.floor(Math.random() * 40 + 15),
+      wind_speed: Math.floor(Math.random() * 25 + 5),
+      wind_direction: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.floor(Math.random() * 8)],
+    }));
   };
+
+  const generateMockRiskAreas = (count: number): HighRiskArea[] => {
+    return Array.from({ length: count }, (_, i) => {
+      const center = getRandomCoordinate(39.7, -121.5, 2);
+      const size = Math.random() * 0.1 + 0.05;
+      const polygon: LngLatLike[] = [
+        [center.longitude - size, center.latitude - size],
+        [center.longitude + size, center.latitude - size],
+        [center.longitude + size, center.latitude + size],
+        [center.longitude - size, center.latitude + size],
+        [center.longitude - size, center.latitude - size],
+      ];
+      return {
+        id: `risk_area_${i}`,
+        name: `Zone ${String.fromCharCode(65 + i)}`,
+        risk_level: Math.random() * 0.6 + 0.4, // High risk levels
+        cause: ['Drought', 'Wind Pattern', 'High Fuel Load'][Math.floor(Math.random() * 3)] as any,
+        polygon,
+      };
+    });
+  };
+
+  const generateMockAlerts = (fires: ActiveFire[], areas: HighRiskArea[]): Alert[] => {
+    const alerts: Alert[] = [];
+    if (fires.length > 5) {
+      alerts.push({
+        id: `alert_fire_count`,
+        title: 'Multiple New Fire Ignitions Detected',
+        message: `${fires.length} new potential fires detected in the last 30 minutes. System is actively monitoring spread.`,
+        severity: 'high',
+        timestamp: new Date().toISOString()
+      })
+    }
+    const criticalArea = areas.find(a => a.risk_level > 0.9);
+    if (criticalArea) {
+      alerts.push({
+        id: `alert_risk_${criticalArea.id}`,
+        title: `Critical Risk in ${criticalArea.name}`,
+        message: `Fuel and weather conditions have reached critical levels. Immediate spread is highly likely if ignition occurs.`,
+        severity: 'critical',
+        timestamp: new Date().toISOString(),
+        location: { name: criticalArea.name, ...getRandomCoordinate(0, 0, 0)} // Placeholder
+      })
+    }
+    return alerts;
+  }
+
+  // --- Mock API Endpoint Definition ---
+  mock.onGet('/api/data/real-time').reply(() => {
+    console.log("Axios mock: Intercepted GET /api/data/real-time")
+
+    const mockFires = generateMockFires(Math.floor(Math.random() * 8));
+    const mockStations = generateMockWeatherStations(10);
+    const mockAreas = generateMockRiskAreas(3);
+    const mockAlerts = generateMockAlerts(mockFires, mockAreas);
+
+    const mockData: RealTimeData = {
+      active_fires: mockFires,
+      weather_stations: mockStations,
+      high_risk_areas: mockAreas,
+      alerts: mockAlerts,
+      current_conditions: {
+        avg_wind_speed: Math.floor(Math.random() * 15 + 10),
+        max_temp: Math.floor(Math.random() * 10 + 25),
+      }
+    }
+    return [200, mockData]
+  })
 }

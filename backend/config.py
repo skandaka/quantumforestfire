@@ -1,294 +1,164 @@
-"""
-Configuration management for Quantum Fire Prediction System
-Location: backend/config.py
-"""
-
-from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
-from typing import Optional, List, Dict, Any, Union
-from datetime import timedelta
+import logging
 import os
-from dotenv import load_dotenv
+from functools import lru_cache
+from typing import List, Any, Optional
 
-# Manually and reliably load the .env file next to this config file.
-dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
-if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path=dotenv_path)
+#
+# --- FIX: Import the necessary Pydantic V2 components ---
+# BaseSettings has been moved to the `pydantic-settings` package.
+# field_validator is the new decorator for custom validation logic.
+#
+from pydantic import AnyHttpUrl, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Use Python's standard logging module directly to prevent circular imports.
+logger = logging.getLogger(__name__)
+
+# --- Environment Configuration ---
+# Determine the application's environment. This is crucial for loading
+# the correct .env file (e.g., .env.development, .env.production).
+# Defaults to 'development' if not specified.
+APP_ENV = os.getenv("APP_ENV", "development")
 
 
 class Settings(BaseSettings):
-    """Application configuration with validation"""
+    """
+    Manages all application settings using Pydantic V2's settings management.
+    It loads configuration from environment variables and .env files, providing
+    robust validation and type-hinting for all parameters.
 
-    # Application settings
-    app_name: str = "Quantum Fire Prediction System"
-    version: str = "1.0.0"
-    debug: bool = Field(default=False, alias="DEBUG")
-    environment: str = Field(default="development", alias="ENVIRONMENT")
-
-    # Server settings
-    host: str = Field(default="0.0.0.0", alias="HOST")
-    port: int = Field(default=8000, alias="PORT")
-    workers: int = Field(default=4, alias="WORKERS")
-
-    # CORS settings
-    cors_origins: Union[str, List[str]] = Field(
-        default=[
-            "http://localhost:3000",
-            "http://localhost:8000",
-            "https://quantum-fire.app"
-        ],
-        alias="CORS_ORIGINS"
+    This class serves as the single source of truth for all configuration
+    parameters across the entire backend application.
+    """
+    # Define the model configuration to load from the correct .env file.
+    # `extra='ignore'` prevents the app from crashing if unexpected environment
+    # variables are present.
+    model_config = SettingsConfigDict(
+        env_file=f".env.{APP_ENV}",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra='ignore'
     )
 
-    # API Keys - External Services
-    nasa_firms_api_key: Optional[str] = Field(default=None, alias="NASA_FIRMS_API_KEY")
-    noaa_api_key: Optional[str] = Field(default=None, alias="NOAA_API_KEY")
-    usgs_api_key: Optional[str] = Field(default=None, alias="USGS_API_KEY")
-    mapbox_api_key: Optional[str] = Field(default=None, alias="MAPBOX_API_KEY")
+    # --- Core Application Settings ---
+    APP_NAME: str = "Quantum Fire Prediction API"
+    APP_VERSION: str = "1.0.0"
+    APP_ENV: str = APP_ENV
+    DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
 
-    # Quantum Platform Credentials
-    IBM_QUANTUM_TOKEN: Optional[str] = Field(default=None, alias="IBM_QUANTUM_TOKEN")
-    IBM_QUANTUM_CRN: Optional[str] = Field(default=None, alias="IBM_QUANTUM_CRN")  # <-- 1. LINE ADDED HERE
-    ibm_quantum_hub: str = Field(default="ibm-q", alias="IBM_QUANTUM_HUB")
-    ibm_quantum_group: str = Field(default="open", alias="IBM_QUANTUM_GROUP")
-    ibm_quantum_project: str = Field(default="main", alias="IBM_QUANTUM_PROJECT")
-    classiq_api_key: Optional[str] = Field(default=None, alias="CLASSIQ_API_KEY")
+    # --- API and Server Settings ---
+    API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "QuantumFire"
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8000
 
+    # --- CORS (Cross-Origin Resource Sharing) Settings ---
+    #
+    # --- FIX: The type is changed from List[AnyHttpUrl] to Any ---
+    # This prevents Pydantic from trying to automatically parse the env var
+    # as a JSON string. We will handle the parsing manually and correctly
+    # in the validator below.
+    #
+    CORS_ORIGINS: Any = []
 
-    # Classiq Configuration (No API key needed - uses SDK authentication)
-    classiq_platform_url: str = Field(
-        default="https://platform.classiq.io",
-        alias="CLASSIQ_PLATFORM_URL"
-    )
-    classiq_timeout: int = Field(default=300, alias="CLASSIQ_TIMEOUT")
-
-    # Database Configuration
-    database_url: str = Field(
-        default="postgresql://quantum:quantum@localhost:5432/quantum_fire",
-        alias="DATABASE_URL"
-    )
-    database_pool_size: int = Field(default=20, alias="DATABASE_POOL_SIZE")
-    database_max_overflow: int = Field(default=40, alias="DATABASE_MAX_OVERFLOW")
-
-    # Redis Configuration
-    redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        alias="REDIS_URL"
-    )
-    redis_password: Optional[str] = Field(default=None, alias="REDIS_PASSWORD")
-    redis_ssl: bool = Field(default=False, alias="REDIS_SSL")
-    cache_ttl: int = Field(default=300, alias="CACHE_TTL")  # 5 minutes
-
-    # Data Collection Settings
-    data_collection_interval: int = Field(default=300, alias="DATA_COLLECTION_INTERVAL")  # 5 minutes
-    nasa_firms_days_back: int = Field(default=7, alias="NASA_FIRMS_DAYS_BACK")
-    weather_forecast_days: int = Field(default=5, alias="WEATHER_FORECAST_DAYS")
-    max_fire_points: int = Field(default=10000, alias="MAX_FIRE_POINTS")
-
-    # Quantum Computing Settings
-    quantum_backend: str = Field(default="classiq_simulator", alias="QUANTUM_BACKEND")
-    quantum_shots: int = Field(default=4096, alias="QUANTUM_SHOTS")
-    quantum_optimization_level: int = Field(default=3, alias="QUANTUM_OPTIMIZATION_LEVEL")
-    quantum_seed: Optional[int] = Field(default=42, alias="QUANTUM_SEED")
-    enable_quantum_error_mitigation: bool = Field(default=True, alias="ENABLE_ERROR_MITIGATION")
-    quantum_timeout: int = Field(default=300, alias="QUANTUM_TIMEOUT")  # 5 minutes
-
-    # Prediction Settings
-    prediction_interval: int = Field(default=600, alias="PREDICTION_INTERVAL")  # 10 minutes
-    prediction_grid_size: int = Field(default=100, alias="PREDICTION_GRID_SIZE")  # 100x100 grid
-    prediction_time_steps: int = Field(default=48, alias="PREDICTION_TIME_STEPS")  # 48 hours
-    ember_transport_radius: float = Field(default=5.0, alias="EMBER_TRANSPORT_RADIUS")  # km
-    minimum_fire_confidence: float = Field(default=0.7, alias="MINIMUM_FIRE_CONFIDENCE")
-
-    # Paradise Fire Demo Settings
-    paradise_demo_enabled: bool = Field(default=True, alias="PARADISE_DEMO_ENABLED")
-    paradise_fire_date: str = Field(default="2018-11-08", alias="PARADISE_FIRE_DATE")
-    paradise_lat: float = Field(default=39.7596, alias="PARADISE_LAT")
-    paradise_lon: float = Field(default=-121.6219, alias="PARADISE_LON")
-
-    collection_bounds: Dict[str, float] = Field(
-        default={
-            "north": 42.0,
-            "south": 32.5,
-            "east": -114.0,
-            "west": -124.5,
-        },
-        alias="COLLECTION_BOUNDS"
-    )
-
-    # Performance Settings
-    max_concurrent_predictions: int = Field(default=5, alias="MAX_CONCURRENT_PREDICTIONS")
-    request_timeout: int = Field(default=60, alias="REQUEST_TIMEOUT")
-    rate_limit_requests: int = Field(default=100, alias="RATE_LIMIT_REQUESTS")
-    rate_limit_period: int = Field(default=60, alias="RATE_LIMIT_PERIOD")  # seconds
-
-    # Monitoring and Logging
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    enable_performance_monitoring: bool = Field(default=True, alias="ENABLE_MONITORING")
-    metrics_export_interval: int = Field(default=60, alias="METRICS_EXPORT_INTERVAL")
-    sentry_dsn: Optional[str] = Field(default=None, alias="SENTRY_DSN")
-    metrics_broadcast_interval: int = Field(default=5, alias="METRICS_BROADCAST_INTERVAL")  # seconds
-    # Security Settings
-    secret_key: str = Field(
-        default="quantum-fire-secret-key-change-in-production",
-        alias="SECRET_KEY"
-    )
-    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
-
-    # Feature Flags
-    enable_quantum_ml: bool = Field(default=True, alias="ENABLE_QUANTUM_ML")
-    enable_3d_visualization: bool = Field(default=True, alias="ENABLE_3D_VISUALIZATION")
-    enable_historical_validation: bool = Field(default=True, alias="ENABLE_HISTORICAL_VALIDATION")
-    enable_real_time_updates: bool = Field(default=True, alias="ENABLE_REAL_TIME_UPDATES")
-
-    # File Storage
-    upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
-    max_upload_size: int = Field(default=100 * 1024 * 1024, alias="MAX_UPLOAD_SIZE")  # 100MB
-
-    # Model Paths
-    models_dir: str = Field(default="./models", alias="MODELS_DIR")
-    quantum_circuits_dir: str = Field(default="./data/quantum_circuits", alias="QUANTUM_CIRCUITS_DIR")
-
-    # External API Endpoints
-    nasa_firms_endpoint: str = Field(
-        default="https://firms.modaps.eosdis.nasa.gov/api/area",
-        alias="NASA_FIRMS_ENDPOINT"
-    )
-    noaa_weather_endpoint: str = Field(
-        default="https://api.weather.gov",
-        alias="NOAA_WEATHER_ENDPOINT"
-    )
-    usgs_elevation_endpoint: str = Field(
-        default="https://nationalmap.gov/epqs/pqs.php",
-        alias="USGS_ELEVATION_ENDPOINT"
-    )
-
-    @field_validator("cors_origins", mode='before')
+    @field_validator("CORS_ORIGINS", mode='before')
     @classmethod
-    def parse_cors_origins(cls, v: Any) -> List[str]:
-        """Parse CORS origins from string or list"""
+    def assemble_cors_origins(cls, v: Any) -> List[AnyHttpUrl]:
+        """
+        Validates and assembles the list of allowed CORS origins from a
+        comma-separated string in an environment variable.
+        """
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+            # If the value is a string, split it by commas and strip whitespace.
+            # This correctly handles the format from your .env file.
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            # If it's already a list (e.g., from direct instantiation), return it.
+            return v
+        raise ValueError("CORS_ORIGINS must be a comma-separated string or a list of URLs")
 
-    @field_validator("quantum_backend")
+    # --- Redis Database Settings ---
+    # Connection details for the Redis instance used for caching, pub/sub,
+    # and storing application state.
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_URL: Optional[str] = None
+
+    @field_validator("REDIS_URL", mode='before')
     @classmethod
-    def validate_quantum_backend(cls, v: str) -> str:
-        """Validate quantum backend selection"""
-        valid_backends = [
-            "classiq_simulator",
-            "classiq_hardware",
-            "ibm_simulator",
-            "ibm_hardware",
-            "local_simulator",
-            "aer_simulator",
-        ]
-        if v not in valid_backends:
-            raise ValueError(f"Invalid quantum backend: {v}")
-        return v
+    def assemble_redis_connection(cls, v: Optional[str], values) -> Any:
+        """
+        Constructs the Redis connection URL from individual components if it's
+        not provided directly as a single URL.
+        """
+        if isinstance(v, str):
+            # If REDIS_URL is already provided, use it.
+            return v
 
-    @field_validator("environment")
-    @classmethod
-    def validate_environment(cls, v: str) -> str:
-        """Validate environment setting"""
-        valid_environments = ["development", "staging", "production", "testing"]
-        if v not in valid_environments:
-            raise ValueError(f"Invalid environment: {v}")
-        return v
+        # Otherwise, build it from the other REDIS_* variables.
+        data = values.data
+        host = data.get("REDIS_HOST", "localhost")
+        port = data.get("REDIS_PORT", 6379)
+        db = data.get("REDIS_DB", 0)
+        password = data.get("REDIS_PASSWORD")
 
-    def get_redis_settings(self) -> Dict[str, Any]:
-        """Get Redis connection settings"""
-        return {
-            "url": self.redis_url,
-            "password": self.redis_password,
-            "ssl": self.redis_ssl,
-            "decode_responses": True,
-            "max_connections": 50
-        }
+        if password:
+            return f"redis://:{password}@{host}:{port}/{db}"
+        return f"redis://{host}:{port}/{db}"
 
-    def get_database_settings(self) -> Dict[str, Any]:
-        """Get database connection settings"""
-        return {
-            "url": self.database_url,
-            "pool_size": self.database_pool_size,
-            "max_overflow": self.database_max_overflow,
-            "pool_pre_ping": True,
-            "pool_recycle": 3600
-        }
+    # --- Data Collection Settings ---
+    # Intervals for the background tasks that fetch data and run predictions.
+    DATA_COLLECTION_INTERVAL_SECONDS: int = 300
+    PREDICTION_INTERVAL_SECONDS: int = 600
 
-    def get_quantum_config(self) -> Dict[str, Any]:
-        """Get quantum computing configuration"""
-        return {
-            "backend": self.quantum_backend,
-            "shots": self.quantum_shots,
-            "optimization_level": self.quantum_optimization_level,
-            "seed": self.quantum_seed,
-            "error_mitigation": self.enable_quantum_error_mitigation,
-            "timeout": self.quantum_timeout,
-            "classiq": {
-                "platform_url": self.classiq_platform_url,
-                "timeout": self.classiq_timeout
-            },
-            "ibm": {
-                "token": self.ibm_quantum_token,
-                "crn": self.ibm_quantum_crn, # <-- 2. I've also updated this helper function
-                "hub": self.ibm_quantum_hub,
-                "group": self.ibm_quantum_group,
-                "project": self.ibm_quantum_project
-            }
-        }
+    # --- External API Keys and Settings ---
+    # Securely manage API keys for external data sources.
+    # These should ALWAYS be set via environment variables, not hardcoded.
+    NASA_FIRMS_API_KEY: str
+    MAP_QUEST_API_KEY: str  # Note: Renamed from MAPBOX_API_KEY to match usage
 
-    def get_prediction_config(self) -> Dict[str, Any]:
-        """Get prediction configuration"""
-        return {
-            "grid_size": self.prediction_grid_size,
-            "time_steps": self.prediction_time_steps,
-            "ember_radius": self.ember_transport_radius,
-            "min_confidence": self.minimum_fire_confidence,
-            "interval": self.prediction_interval
-        }
+    # --- Quantum Provider Settings ---
+    # Configuration for connecting to quantum computing services.
+    USE_REAL_QUANTUM_BACKENDS: bool = False
+    CLASSIQ_API_URL: str = "https://api.classiq.io"
 
-    def is_production(self) -> bool:
-        """Check if running in production"""
-        return self.environment == "production"
-
-    def is_development(self) -> bool:
-        """Check if running in development"""
-        return self.environment == "development"
-
-    class Config:
-        env_file = os.path.join(os.path.dirname(__file__), ".env")
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        extra = "ignore"
+    # The IBM Quantum token is optional; Classiq can be used without it.
+    # If provided, it enables access to IBM backends through the Classiq platform.
+    IBM_QUANTUM_TOKEN: Optional[str] = None
 
 
-# Create global settings instance
-settings = Settings()
+@lru_cache()
+def get_settings() -> Settings:
+    """
+    Provides the application settings as a cached singleton.
+
+    Using lru_cache ensures that the Settings object is created only once,
+    preventing the overhead of reading .env files and validating settings
+    on every call. This is a performance best practice.
+
+    Returns:
+        The cached application settings instance.
+    """
+    logger.info(f"Loading settings for environment: {APP_ENV}")
+    try:
+        settings_instance = Settings()
+        # Log a subset of settings for debugging, excluding secrets.
+        logger.info(f"Settings loaded successfully.")
+        logger.debug(
+            f"Debug mode: {settings_instance.DEBUG}, Log level: {settings_instance.LOG_LEVEL}"
+        )
+        return settings_instance
+    except Exception as e:
+        # If settings fail to load, it's a critical error.
+        logger.critical(f"🚨 FATAL: FAILED TO LOAD SETTINGS. Check your .env file and environment variables. Error: {e}",
+                        exc_info=True)
+        raise
 
 
-# Validate critical settings on startup
-def validate_settings() -> List[str]:
-    """Validate critical settings and warn about missing configurations"""
-    warnings = []
-
-    # Check API keys
-    if not settings.nasa_firms_api_key:
-        warnings.append("NASA FIRMS API key not configured")
-    if not settings.noaa_api_key:
-        warnings.append("NOAA API key not configured")
-
-    # Check production settings
-    if settings.is_production():
-        if settings.secret_key == "quantum-fire-secret-key-change-in-production":
-            raise ValueError("Secret key must be changed in production!")
-        if settings.debug:
-            warnings.append("Debug mode is enabled in production")
-
-    return warnings
-
-
-# Export settings
-__all__ = ["settings", "validate_settings"]
+# --- Global `settings` instance ---
+# This is the single instance of the settings that will be imported and used
+# throughout the rest of the application.
+settings = get_settings()

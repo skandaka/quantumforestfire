@@ -1,528 +1,267 @@
-"""
-Real-time Data Feeds Manager for Quantum Fire Prediction System
-Location: backend/data_pipeline/real_time_feeds.py
-"""
-
 import asyncio
 import json
 import logging
-from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from collections import deque
+from datetime import datetime, timezone
+from typing import Any, Coroutine, Dict, List, Set
 
 import numpy as np
 import redis.asyncio as redis
-from asyncio import Queue
-from shapely.geometry import Point
+from redis.asyncio.client import PubSub
 
 from config import settings
-from .data_processor import FireDataProcessor
-from .data_validation import DataValidator
-from .nasa_firms_collector import NASAFIRMSCollector
-from .noaa_weather_collector import NOAAWeatherCollector
-from .openmeteo_weather_collector import OpenMeteoWeatherCollector
-from .usgs_terrain_collector import USGSTerrainCollector
+# FIX: Changed all relative imports to be absolute from the project root.
+from data_pipeline.data_processor import DataProcessor
+from data_pipeline.nasa_firms_collector import NASAFIRMSCollector
+from data_pipeline.noaa_weather_collector import NOAAWeatherCollector
 from data_pipeline.openmeteo_weather_collector import OpenMeteoWeatherCollector
+from data_pipeline.usgs_terrain_collector import USGSTerrainCollector
 
+# Set up logging
 logger = logging.getLogger(__name__)
 
-class RealTimeDataManager:
-    """Manages the full lifecycle of real-time data: collection, processing, caching, and streaming."""
 
-    def __init__(self):
-        self.redis_client: Optional[redis.Redis] = None
-        self.collectors: Dict[str, Any] = {}
-        self.processor = FireDataProcessor()
-        self.validator = DataValidator()
-        self.is_running = False
-        self._stream_subscribers: Dict[str, List[Queue]] = defaultdict(list)
-        self.performance_metrics = {
-            'collections': 0,
-            'errors': 0,
-            'last_update': None,
-            'data_points': 0
+class RealTimeDataManager:
+    """
+    Manages the collection, processing, and distribution of real-time data
+    from various sources like NASA FIRMS and NOAA.
+    """
+
+    def __init__(self, redis_pool: redis.ConnectionPool):
+        """
+        Initializes the RealTimeDataManager.
+
+        Args:
+            redis_pool: An asynchronous Redis connection pool.
+        """
+        logger.info("Initializing Real-Time Data Manager...")
+        self.redis_pool = redis_pool
+        self.redis_client = redis.Redis.from_pool(self.redis_pool)
+        self.data_processor = DataProcessor()
+
+        # Initialize data collectors for different sources
+        self.collectors = {
+            "nasa_firms": NASAFIRMSCollector(),
+            "noaa_weather": NOAAWeatherCollector(),
+            "usgs_terrain": USGSTerrainCollector(),
+            "openmeteo_weather": OpenMeteoWeatherCollector(),
         }
 
-    async def initialize(self):
-        """Initializes the Redis connection and all data collectors."""
-        logger.info("Initializing Real-Time Data Manager...")
+        # Initialize the missing attribute here.
+        self.stream_subscribers: Dict[str, Set[asyncio.Queue]] = {
+            "logs": set(),
+            "predictions": set(),
+            "data_updates": set(),
+        }
+
+        self.prediction_history = deque(maxlen=100)
+        self.active_tasks: List[asyncio.Task] = []
+        self._pubsub_client: PubSub | None = None
+        self._pubsub_task: asyncio.Task | None = None
+
+        for name, collector in self.collectors.items():
+            logger.info(f"Initialized {name} collector.")
+
+        logger.info("Real-Time Data Manager initialized successfully.")
+
+    async def initialize_redis(self):
+        """
+        Pings Redis to ensure the connection is alive.
+        """
         try:
-            self.redis_client = redis.from_url(
-                settings.redis_url,
-                decode_responses=True,
-                socket_connect_timeout=5
-            )
             await self.redis_client.ping()
             logger.info("Successfully connected to Redis.")
         except Exception as e:
-            logger.warning(f"Redis not available due to error: {e}. Caching and history features will be disabled.")
-            self.redis_client = None
-
-        # Initialize data collectors
-        self.collectors['nasa_firms'] = NASAFIRMSCollector(settings.nasa_firms_api_key)
-        self.collectors['noaa_weather'] = NOAAWeatherCollector(settings.noaa_api_key)
-        # ✅ FIXED: Pass the required api_key argument to the USGSTerrainCollector
-        self.collectors['usgs_terrain'] = USGSTerrainCollector(settings.usgs_api_key or "demo_key")
-
-
-        for name, collector in self.collectors.items():
-            await collector.initialize()
-            logger.info(f"Initialized {name} collector.")
-
-        self.is_running = True
-        logger.info("Real-Time Data Manager initialized successfully.")
-
-    def is_healthy(self) -> bool:
-        """Checks if the data pipeline and its core components are healthy."""
-        collectors_ok = all(c.is_healthy() for c in self.collectors.values())
-        return self.is_running and collectors_ok
-
-    def _convert_numpy_to_list(self, obj):
-        """Convert numpy arrays to lists for JSON serialization"""
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, dict):
-            return {k: self._convert_numpy_to_list(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._convert_numpy_to_list(v) for v in obj]
-        else:
-            return obj
-
-    async def collect_all_data(self) -> Dict[str, Any]:
-        """Coordinates a full data collection cycle from all sources in parallel."""
-        start_time = datetime.utcnow()
-        bounds = settings.collection_bounds
-
-        tasks = {
-            "fire": self._collect_fire_data(bounds),
-            "weather": self._collect_weather_data(bounds),
-            "terrain": self._collect_terrain_data(bounds),
-        }
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-        collected_data = {}
-        for name, result in zip(tasks.keys(), results):
-            if isinstance(result, Exception):
-                logger.error(f"Failed to collect data for '{name}': {result}", exc_info=result)
-                self.performance_metrics['errors'] += 1
-            else:
-                collected_data[name] = result
-
-        validation_result = await self.validator.validate_collection(collected_data)
-        if not validation_result['valid']:
-            logger.warning(f"Data validation failed: {validation_result['errors']}")
-
-        processed_data = await self.processor.process_collection(collected_data)
-        await self._cache_data(processed_data)
-        await self._broadcast_to_streams(processed_data)
-
-        self.performance_metrics['collections'] += 1
-        self.performance_metrics['last_update'] = datetime.utcnow().isoformat()
-        self.performance_metrics['data_points'] = self._count_data_points(processed_data)
-
-        duration = (datetime.utcnow() - start_time).total_seconds()
-        logger.info(f"Data collection completed in {duration:.2f} seconds.")
-        return processed_data
-
-    # backend/data_pipeline/real_time_feeds.py (add this method)
-
-    async def collect_area_data(self, bounds: Dict[str, float]) -> Dict[str, Any]:
-        """
-        Collect all data types for a specific geographic area
-
-        Args:
-            bounds: Dictionary with 'north', 'south', 'east', 'west'
-
-        Returns:
-            Comprehensive area data for quantum processing
-        """
-        start_time = datetime.now()
-
-        try:
-            # Run parallel collection for all data types
-            tasks = {
-                'fire': self._collect_fire_data(bounds),
-                'weather': self._collect_weather_data(bounds),
-                'terrain': self._collect_terrain_data(bounds)
-            }
-
-            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
-            area_data = {}
-            for name, result in zip(tasks.keys(), results):
-                if isinstance(result, Exception):
-                    logger.error(f"Failed to collect {name} data for area: {result}")
-                    # Provide default data structure
-                    if name == 'fire':
-                        area_data[name] = {'active_fires': [], 'metadata': {'error': str(result)}}
-                    elif name == 'weather':
-                        area_data[name] = {
-                            'current_conditions': {
-                                'avg_temperature': 20,
-                                'avg_humidity': 50,
-                                'avg_wind_speed': 10,
-                                'max_wind_speed': 15,
-                                'dominant_wind_direction': 0
-                            },
-                            'metadata': {'error': str(result)}
-                        }
-                    elif name == 'terrain':
-                        area_data[name] = {'elevation_grid': np.zeros((50, 50)), 'metadata': {'error': str(result)}}
-                else:
-                    area_data[name] = result
-
-            # Process the collected data
-            processed_data = await self.processor.process_collection(area_data)
-
-            # Add collection metadata
-            processed_data['collection_metadata'] = {
-                'bounds': bounds,
-                'collection_time': (datetime.now() - start_time).total_seconds(),
-                'timestamp': datetime.now().isoformat()
-            }
-
-            return processed_data
-
-        except Exception as e:
-            logger.error(f"Critical error in area data collection: {str(e)}")
+            logger.error(f"Failed to connect to Redis: {e}")
             raise
 
-    async def queue_critical_alert(self, alert_data: Dict[str, Any]):
-        """Queue a critical alert for immediate notification"""
-        try:
-            alert = {
-                'id': f"alert_{datetime.now().timestamp()}",
-                'timestamp': datetime.now().isoformat(),
-                **alert_data
-            }
-
-            # Store in Redis
-            if self.redis_client:
-                await self.redis_client.lpush('alerts:critical', json.dumps(alert))
-                await self.redis_client.ltrim('alerts:critical', 0, 99)  # Keep last 100
-
-                # Publish to subscribers
-                await self.redis_client.publish('alerts:channel', json.dumps(alert))
-
-            # Add to stream subscribers
-            await self._broadcast_to_streams({'type': 'alert', 'data': alert}, 'alerts')
-
-            logger.warning(f"Critical alert queued: {alert_data.get('message', 'Unknown')}")
-
-        except Exception as e:
-            logger.error(f"Failed to queue critical alert: {str(e)}")
-
-    async def _queue_priority_prediction(self, high_risk_area: Dict[str, Any]):
-        """Queue a priority prediction for high-risk area"""
-        try:
-            priority_request = {
-                'location': {
-                    'latitude': high_risk_area['latitude'],
-                    'longitude': high_risk_area['longitude']
-                },
-                'radius': 25,  # km
-                'priority': 'high',
-                'reason': f"Risk level: {high_risk_area['risk_level']}",
-                'queued_at': datetime.now().isoformat()
-            }
-
-            if self.redis_client:
-                await self.redis_client.lpush(
-                    'predictions:priority_queue',
-                    json.dumps(priority_request)
-                )
-
-            logger.info(
-                f"Queued priority prediction for high-risk area at {high_risk_area['latitude']:.4f}, {high_risk_area['longitude']:.4f}")
-
-        except Exception as e:
-            logger.error(f"Failed to queue priority prediction: {str(e)}")
-
-    async def _collect_fire_data(self, bounds: Dict) -> Dict:
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=1)
-        fire_data = await self.collectors['nasa_firms'].get_active_fires(
-            bounds, start_date, end_date, settings.minimum_fire_confidence
-        )
-        if settings.enable_historical_validation:
-            fire_data['historical'] = await self.collectors['nasa_firms'].get_historical_fires(
-                bounds, settings.nasa_firms_days_back
-            )
-        return fire_data
-
-    async def _collect_weather_data(self, bounds: Dict) -> Dict:
-        """Collect weather data with proper error handling"""
-        try:
-            # Use Open-Meteo collector instead of NOAA
-            if 'openmeteo' not in self.collectors:
-                self.collectors['openmeteo'] = OpenMeteoWeatherCollector()
-                await self.collectors['openmeteo'].initialize()
-
-            weather_data = await self.collectors['openmeteo'].get_weather_data(
-                bounds,
-                forecast_days=settings.weather_forecast_days
-            )
-
-            # Log high-risk areas for immediate quantum analysis
-            if weather_data.get('high_risk_areas'):
-                logger.warning(f"Found {len(weather_data['high_risk_areas'])} high-risk weather areas")
-
-                # Trigger immediate quantum prediction for high-risk areas
-                for area in weather_data['high_risk_areas']:
-                    if area['risk_level'] in ['extreme', 'very_high']:
-                        await self._queue_priority_prediction(area)
-
-            return weather_data
-
-        except Exception as e:
-            logger.error(f"Weather collection failed: {str(e)}")
-
-            # Return minimal valid data structure to prevent NoData errors
-            return {
-                'stations': [],
-                'current_conditions': {
-                    'avg_temperature': 20,
-                    'avg_humidity': 50,
-                    'avg_wind_speed': 10,
-                    'max_wind_speed': 15,
-                    'dominant_wind_direction': 0
-                },
-                'fire_weather': {
-                    'max_fosberg': 30,
-                    'avg_fosberg': 20,
-                    'red_flag_warning_count': 0
-                },
-                'metadata': {
-                    'source': 'Open-Meteo',
-                    'collection_time': datetime.now().isoformat(),
-                    'error': str(e)
-                }
-            }
-
-    async def _collect_terrain_data(self, bounds: Dict) -> Dict:
-        cache_key = f"terrain:{bounds['north']}:{bounds['south']}:{bounds['east']}:{bounds['west']}"
-
-        if self.redis_client:
-            cached = await self.redis_client.get(cache_key)
-            if cached:
-                return json.loads(cached)
-
-        terrain_data = await self.collectors['usgs_terrain'].get_terrain_data(bounds, resolution=30)
-        terrain_data['fuel'] = await self.collectors['usgs_terrain'].get_fuel_data(bounds)
-
-        # Convert numpy arrays to lists before caching
-        terrain_data_serializable = self._convert_numpy_to_list(terrain_data)
-
-        if self.redis_client:
-            try:
-                await self.redis_client.setex(cache_key, timedelta(days=7), json.dumps(terrain_data_serializable))
-            except Exception as e:
-                logger.error(f"Failed to cache terrain data: {e}")
-
-        return terrain_data
-
-    async def get_latest_fire_data(self) -> Optional[Dict[str, Any]]:
-        if self.redis_client and (data := await self.redis_client.get("latest:fire")):
-            return json.loads(data)
-        return None
-
-    async def get_latest_weather_data(self) -> Optional[Dict[str, Any]]:
-        if self.redis_client and (data := await self.redis_client.get("latest:weather")):
-            return json.loads(data)
-        return None
-
-    async def store_prediction(self, prediction: Dict[str, Any]):
-        if not self.redis_client: return
-        pred_id = prediction.get('prediction_id')
-        if not pred_id: return
-
-        await self.redis_client.setex(f"prediction:{pred_id}", timedelta(hours=1), json.dumps(prediction))
-        await self.redis_client.lpush("prediction:history", pred_id)
-        await self.redis_client.ltrim("prediction:history", 0, 99)
-        await self._broadcast_to_streams({'type': 'prediction', 'data': prediction}, 'predictions')
-
-    async def subscribe_to_stream(self, stream_type: str) -> Queue:
-        queue = Queue()
-        self._stream_subscribers[stream_type].append(queue)
-        return queue
-
-
-
-    async def get_data_for_location(self, latitude: float, longitude: float, radius_km: float = 50) -> Dict[str, Any]:
-        point = Point(longitude, latitude)
-        fire_data = await self.get_latest_fire_data() or {}
-        weather_data = await self.get_latest_weather_data() or {}
-
-        nearby_fires = []
-        if 'active_fires' in fire_data:
-            for fire in fire_data['active_fires']:
-                dist = point.distance(Point(fire['longitude'], fire['latitude'])) * 111.32
-                if dist <= radius_km:
-                    nearby_fires.append({**fire, 'distance_km': round(dist, 2)})
-
-        return {
-            'location': {'latitude': latitude, 'longitude': longitude, 'radius_km': radius_km},
-            'nearby_fires': nearby_fires,
-            'weather': self._interpolate_weather(weather_data, latitude, longitude),
-            'terrain': self._extract_terrain_at_point(await self._collect_terrain_data(settings.collection_bounds), latitude, longitude),
-            'timestamp': datetime.utcnow().isoformat()
-        }
-
-    async def get_demo_fire_data(self) -> Dict[str, Any]:
-        """Get comprehensive demo fire data when real data isn't available"""
-        current_time = datetime.utcnow()
-
-        return {
-            'active_fires': [
-                {
-                    'id': 'demo_fire_paradise_001',
-                    'latitude': 39.7596,
-                    'longitude': -121.6219,
-                    'intensity': 0.92,
-                    'area_hectares': 2500.0,
-                    'confidence': 0.95,
-                    'brightness_temperature': 425.0,
-                    'detection_time': (current_time - timedelta(minutes=30)).isoformat(),
-                    'satellite': 'NASA MODIS',
-                    'frp': 850.0,
-                    'center_lat': 39.7596,
-                    'center_lon': -121.6219
-                },
-                {
-                    'id': 'demo_fire_butte_002',
-                    'latitude': 39.7200,
-                    'longitude': -121.5800,
-                    'intensity': 0.76,
-                    'area_hectares': 1200.0,
-                    'confidence': 0.88,
-                    'brightness_temperature': 398.0,
-                    'detection_time': (current_time - timedelta(minutes=45)).isoformat(),
-                    'satellite': 'NASA VIIRS',
-                    'frp': 420.0,
-                    'center_lat': 39.7200,
-                    'center_lon': -121.5800
-                },
-                {
-                    'id': 'demo_fire_chico_003',
-                    'latitude': 39.8100,
-                    'longitude': -121.7200,
-                    'intensity': 0.54,
-                    'area_hectares': 650.0,
-                    'confidence': 0.82,
-                    'brightness_temperature': 375.0,
-                    'detection_time': (current_time - timedelta(hours=1)).isoformat(),
-                    'satellite': 'NASA MODIS',
-                    'frp': 280.0,
-                    'center_lat': 39.8100,
-                    'center_lon': -121.7200
-                },
-                {
-                    'id': 'demo_fire_sacramento_004',
-                    'latitude': 38.5800,
-                    'longitude': -121.4900,
-                    'intensity': 0.68,
-                    'area_hectares': 890.0,
-                    'confidence': 0.91,
-                    'brightness_temperature': 410.0,
-                    'detection_time': (current_time - timedelta(minutes=15)).isoformat(),
-                    'satellite': 'NASA VIIRS',
-                    'frp': 340.0,
-                    'center_lat': 38.5800,
-                    'center_lon': -121.4900
-                },
-                {
-                    'id': 'demo_fire_redding_005',
-                    'latitude': 40.2100,
-                    'longitude': -122.1500,
-                    'intensity': 0.83,
-                    'area_hectares': 1800.0,
-                    'confidence': 0.94,
-                    'brightness_temperature': 435.0,
-                    'detection_time': (current_time - timedelta(minutes=20)).isoformat(),
-                    'satellite': 'NASA MODIS',
-                    'frp': 720.0,
-                    'center_lat': 40.2100,
-                    'center_lon': -122.1500
-                }
-            ],
-            'metadata': {
-                'source': 'Demo Data - NASA FIRMS Simulation',
-                'collection_time': current_time.isoformat(),
-                'total_detections': 5,
-                'bounds': {
-                    'north': 40.5,
-                    'south': 38.0,
-                    'east': -121.0,
-                    'west': -122.5
-                },
-                'data_quality': 'high',
-                'last_satellite_pass': (current_time - timedelta(minutes=12)).isoformat()
-            }
-        }
-
-    async def get_paradise_demo_data(self) -> Dict[str, Any]:
-        return {
-            'location': {'name': 'Paradise, California', 'latitude': settings.paradise_lat, 'longitude': settings.paradise_lon},
-            'date': '2018-11-08T06:30:00Z',
-            'conditions': {'wind_speed_mph': 50, 'wind_direction_deg': 45, 'humidity_pct': 23, 'temp_c': 15, 'fuel_moisture_pct': 8},
-            'fire_origin': {'latitude': 39.794, 'longitude': -121.605, 'name': 'Camp Fire Origin'},
-            'ember_cast_potential': 'extreme',
-            'actual_outcome': {'fatalities': 85, 'structures_destroyed': 18804}
-        }
-
-    async def _cache_data(self, data: Dict[str, Any]):
-        if not self.redis_client:
+    async def start_streaming(self):
+        """
+        Starts the real-time data streaming and processing tasks.
+        """
+        if self._pubsub_task and not self._pubsub_task.done():
+            logger.warning("Streaming is already running.")
             return
 
+        logger.info("Starting real-time data streaming...")
+        self._pubsub_client = self.redis_client.pubsub()
+        self._pubsub_task = asyncio.create_task(self._pubsub_listener())
+        self.active_tasks.append(self._pubsub_task)
+        logger.info("Real-time data streaming started.")
+
+    async def stop_streaming(self):
+        """
+        Stops all active streaming and processing tasks.
+        """
+        logger.info("Stopping real-time data streaming...")
+        if self._pubsub_task and not self._pubsub_task.done():
+            self._pubsub_task.cancel()
+            try:
+                await self._pubsub_task
+            except asyncio.CancelledError:
+                pass
+        if self._pubsub_client:
+            await self._pubsub_client.close()
+        logger.info("Real-time data streaming stopped.")
+
+        for task in self.active_tasks:
+            if not task.done():
+                task.cancel()
         try:
-            if 'fire' in data:
-                fire_data_serializable = self._convert_numpy_to_list(data['fire'])
-                await self.redis_client.setex("latest:fire", settings.cache_ttl, json.dumps(fire_data_serializable))
+            await asyncio.gather(*self.active_tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
+        self.active_tasks.clear()
+        logger.info("All associated tasks stopped.")
 
-            if 'weather' in data:
-                weather_data_serializable = self._convert_numpy_to_list(data['weather'])
-                await self.redis_client.setex("latest:weather", settings.cache_ttl,
-                                              json.dumps(weather_data_serializable))
+    async def _pubsub_listener(self):
+        """
+        Listens for messages on subscribed Redis channels.
+        """
+        await self._pubsub_client.subscribe("system_logs", "predictions", "data_updates")
+        logger.info("Subscribed to Redis channels.")
+        try:
+            async for message in self._pubsub_client.listen():
+                if message["type"] == "message":
+                    channel = message["channel"].decode("utf-8")
+                    data = json.loads(message["data"].decode("utf-8"))
+                    await self._broadcast_to_streams(data, channel)
+        except asyncio.CancelledError:
+            logger.info("Pub/sub listener task cancelled.")
         except Exception as e:
-            logger.error(f"Error caching data: {e}")
+            logger.error(f"Error in Redis pub/sub listener: {e}")
+        finally:
+            logger.info("Pub/sub listener task finished.")
 
-    async def _broadcast_to_streams(self, data: Dict[str, Any], stream_type: str = 'all'):
-        streams_to_notify = self._stream_subscribers.keys() if stream_type == 'all' else [stream_type]
-        for stream in streams_to_notify:
+    async def collect_and_process_data(self) -> Dict[str, Any]:
+        """
+        Orchestrates the data collection and processing pipeline.
+
+        Returns:
+            A dictionary containing the processed data.
+        """
+        start_time = datetime.now(timezone.utc)
+        logger.info("Starting data collection cycle...")
+
+        # Concurrently run all data collection tasks
+        collection_tasks: Dict[str, Coroutine[Any, Any, Any]] = {
+            name: collector.collect() for name, collector in self.collectors.items()
+        }
+        results = await asyncio.gather(
+            *collection_tasks.values(), return_exceptions=True
+        )
+        raw_data = dict(zip(collection_tasks.keys(), results))
+
+        # Handle any errors during collection
+        for name, result in raw_data.items():
+            if isinstance(result, Exception):
+                logger.error(f"Error collecting data from {name}: {result}")
+                raw_data[name] = None  # Ensure data is None if collection failed
+
+        # Process the collected raw data
+        processed_data = await self.data_processor.process(raw_data)
+
+        end_time = datetime.now(timezone.utc)
+        duration = (end_time - start_time).total_seconds()
+        logger.info(f"Data collection completed in {duration:.2f} seconds.")
+
+        return processed_data
+
+    async def get_latest_data(self) -> Dict[str, Any] | None:
+        """
+        Retrieves the most recently processed data from Redis.
+
+        Returns:
+            A dictionary containing the latest data, or None if not available.
+        """
+        latest_data_json = await self.redis_client.get("latest_processed_data")
+        if latest_data_json:
+            return json.loads(latest_data_json)
+        return None
+
+    async def get_prediction_history(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves a list of recent predictions.
+
+        Args:
+            limit: The maximum number of predictions to return.
+
+        Returns:
+            A list of prediction dictionaries.
+        """
+        return list(self.prediction_history)[:limit]
+
+    async def store_prediction(self, prediction: Dict[str, Any]):
+        """
+        Stores a new prediction in Redis and history, and broadcasts it.
+
+        Args:
+            prediction: The prediction data to store.
+        """
+        self.prediction_history.appendleft(prediction)
+        prediction_json = json.dumps(prediction, default=self._json_serializer)
+        await self.redis_client.lpush("prediction_history", prediction_json)
+        await self.redis_client.ltrim("prediction_history", 0, 99)
+        await self._broadcast_to_streams({'type': 'prediction', 'data': prediction}, 'predictions')
+
+    async def subscribe_to_stream(self, stream: str) -> asyncio.Queue:
+        """
+        Allows a client to subscribe to a real-time data stream.
+
+        Args:
+            stream: The name of the stream to subscribe to (e.g., 'logs', 'predictions').
+
+        Returns:
+            An asyncio.Queue object that will receive messages from the stream.
+        """
+        if stream not in self.stream_subscribers:
+            raise ValueError(f"Unknown stream: {stream}")
+
+        queue = asyncio.Queue()
+        self.stream_subscribers[stream].add(queue)
+        logger.info(f"New subscriber added to the '{stream}' stream.")
+        return queue
+
+    async def unsubscribe_from_stream(self, stream: str, queue: asyncio.Queue):
+        """
+        Unsubscribes a client from a real-time data stream.
+
+        Args:
+            stream: The name of the stream.
+            queue: The queue object to remove from the subscription list.
+        """
+        if stream in self.stream_subscribers:
+            self.stream_subscribers[stream].discard(queue)
+            logger.info(f"Subscriber removed from the '{stream}' stream.")
+
+    async def _broadcast_to_streams(self, data: Dict[str, Any], stream: str):
+        """
+        Broadcasts data to all subscribers of a specific stream.
+
+        Args:
+            data: The data to broadcast.
+            stream: The target stream name.
+        """
+        if stream in self.stream_subscribers:
+            message = json.dumps(data, default=self._json_serializer)
             for queue in list(self.stream_subscribers.get(stream, [])):
                 try:
-                    queue.put_nowait(data)
-                except asyncio.QueueFull:
-                    self.stream_subscribers[stream].remove(queue)
+                    await queue.put(message)
+                except Exception as e:
+                    logger.error(f"Error putting message in queue for stream '{stream}': {e}")
+                    # Optionally remove unresponsive queues
+                    self.unsubscribe_from_stream(stream, queue)
 
-    def _count_data_points(self, data: Dict[str, Any]) -> int:
-        count = 0
-        if 'fire' in data and 'active_fires' in data['fire']:
-            count += len(data['fire']['active_fires'])
-        if 'weather' in data and 'stations' in data['weather']:
-            count += len(data['weather']['stations'])
-        return count
-
-    def _interpolate_weather(self, weather_data: Dict, lat: float, lon: float) -> Dict:
-        stations = weather_data.get('stations', [])
-        if not stations: return {}
-        distances = np.array([np.sqrt((s['latitude'] - lat)**2 + (s['longitude'] - lon)**2) for s in stations])
-        return stations[np.argmin(distances)] if stations else {}
-
-    def _extract_terrain_at_point(self, terrain_data: Dict, lat: float, lon: float) -> Dict:
-        # This is a placeholder for a more complex GIS operation.
-        return {
-            'elevation': terrain_data.get('elevation_mean', 0),
-            'slope': terrain_data.get('slope_mean', 0),
-            'aspect': terrain_data.get('aspect_mean', 0),
-            'fuel_model': terrain_data.get('fuel_model_dominant', 'default')
-        }
-
-    async def shutdown(self):
-        logger.info("Shutting down Real-Time Data Manager...")
-        self.is_running = False
-        for collector in self.collectors.values():
-            await collector.shutdown()
-        if self.redis_client:
-            await self.redis_client.close()
-        logger.info("Real-Time Data Manager shutdown complete.")
+    def _json_serializer(self, obj: Any) -> Any:
+        """
+        Custom JSON serializer to handle special data types like datetime and numpy arrays.
+        """
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.int64, np.int32)):
+            return int(obj)
+        if isinstance(obj, (np.float64, np.float32)):
+            return float(obj)
+        raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

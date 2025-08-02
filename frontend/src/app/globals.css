@@ -1,288 +1,172 @@
+/* Import Tailwind CSS layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Define global CSS variables for theming. This is the single source of truth
+  for colors, fonts, and other design tokens, making the application's
+  visual identity consistent and easy to modify.
+*/
 @layer base {
   :root {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 5%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 5%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 0 72% 51%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 72% 51%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 72% 51%;
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 84.2% 60.2%;
+    --primary-foreground: 0 85.7% 97.3%;
+
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 84.2% 60.2%;
+
     --radius: 0.5rem;
+
+    --font-sans: 'Inter', sans-serif;
   }
 }
 
+/* Apply base styles to the document. This includes setting the default
+  font, background color, and ensuring smooth font rendering.
+*/
 @layer base {
   * {
     @apply border-border;
-    box-sizing: border-box;
   }
   body {
     @apply bg-background text-foreground;
-    overflow-x: hidden;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  
-  /* Ensure proper stacking context */
-  section {
+}
+
+/* Custom component styles. This is where we define reusable component-like
+  classes that can be applied throughout the application.
+*/
+@layer components {
+  /*
+    The "quantum-glow" effect is a signature animation for this application.
+    It uses a pseudo-element with a conic gradient to create a shimmering
+    border effect on hover and focus, reinforcing the high-tech theme.
+  */
+  .quantum-glow {
+    position: relative;
+    overflow: hidden;
+    --glow-color: theme('colors.red.500');
+  }
+
+  .quantum-glow::before {
+    content: '';
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    z-index: 0;
+    background: conic-gradient(
+            from 180deg at 50% 50%,
+            transparent 0%,
+            var(--glow-color) 30%,
+            transparent 60%,
+            transparent 100%
+    );
+    opacity: 0;
+    transform-origin: center;
+    animation: quantum-spin 4s linear infinite;
+    transition: opacity 0.4s ease-in-out;
+  }
+
+  .quantum-glow:hover::before,
+  .quantum-glow:focus-visible::before {
+    opacity: 0.3;
+  }
+
+  .quantum-glow > * {
     position: relative;
     z-index: 1;
   }
-  
-  /* Fix canvas and 3D elements */
-  canvas {
-    display: block;
-    max-width: 100%;
+
+  /*
+    Custom spinner animation for loading states. This is a simple, clean
+    rotation animation applied to loading icons.
+  */
+  .spinner {
+    display: inline-block;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: theme('colors.red.500');
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 }
 
-/* Custom scrollbar */
+/* Custom keyframe animations used by the component classes.
+*/
+@layer utilities {
+  @keyframes quantum-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes pulse-bright {
+    0%, 100% {
+      opacity: 1;
+      box-shadow: 0 0 5px theme('colors.green.500'), 0 0 10px theme('colors.green.500');
+    }
+    50% {
+      opacity: 0.7;
+      box-shadow: 0 0 15px theme('colors.green.400'), 0 0 25px theme('colors.green.400');
+    }
+  }
+}
+
+/*
+  Custom scrollbar styling for a more immersive, on-theme experience.
+  This styles the scrollbar to match the dark aesthetic of the application,
+  which is a professional touch that improves the overall look and feel.
+*/
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.5);
+  background: #111827; /* gray-900 */
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(239, 68, 68, 0.5);
-  border-radius: 4px;
+  background-color: #374151; /* gray-700 */
+  border-radius: 6px;
+  border: 2px solid #111827; /* gray-900 */
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(239, 68, 68, 0.7);
+  background-color: #4b5563; /* gray-600 */
 }
-
-/* Quantum glow effect */
-.quantum-glow {
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
-  transition: box-shadow 0.3s ease;
-}
-
-.quantum-glow:hover {
-  box-shadow: 0 0 30px rgba(239, 68, 68, 0.8);
-}
-
-/* Spinner animation */
-.spinner {
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top: 2px solid #ef4444;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Fire particle effects */
-@keyframes flicker {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-.fire-flicker {
-  animation: flicker 0.5s ease-in-out infinite alternate;
-}
-
-/* Layout fixes */
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  height: calc(100vh - 89px);
-  overflow: hidden;
-}
-
-.content-area {
-  overflow: hidden;
-  position: relative;
-}
-
-/* Map and 3D view containers */
-.visualization-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Responsive fixes */
-@media (max-width: 768px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-}
-
-/* Alert styles */
-.alert-critical {
-  border-left: 4px solid #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.alert-high {
-  border-left: 4px solid #f97316;
-  background: rgba(249, 115, 22, 0.1);
-}
-
-.alert-medium {
-  border-left: 4px solid #eab308;
-  background: rgba(234, 179, 8, 0.1);
-}
-
-.alert-low {
-  border-left: 4px solid #22c55e;
-  background: rgba(34, 197, 94, 0.1);
-}
-
-/* Fire animation */
-@keyframes fire {
-  0% {
-    text-shadow: 0 0 5px #ff6b6b,
-                 0 0 10px #ff6b6b,
-                 0 0 15px #ff6b6b,
-                 0 0 20px #ff4444,
-                 0 0 35px #ff4444,
-                 0 0 40px #ff4444,
-                 0 0 50px #ff4444,
-                 0 0 75px #ff4444;
-  }
-  50% {
-    text-shadow: 0 0 10px #ff6b6b,
-                 0 0 20px #ff6b6b,
-                 0 0 25px #ff6b6b,
-                 0 0 30px #ff4444,
-                 0 0 45px #ff4444,
-                 0 0 50px #ff4444,
-                 0 0 60px #ff4444,
-                 0 0 85px #ff4444;
-  }
-  100% {
-    text-shadow: 0 0 5px #ff6b6b,
-                 0 0 10px #ff6b6b,
-                 0 0 15px #ff6b6b,
-                 0 0 20px #ff4444,
-                 0 0 35px #ff4444,
-                 0 0 40px #ff4444,
-                 0 0 50px #ff4444,
-                 0 0 75px #ff4444;
-  }
-}
-
-.fire-text {
-  animation: fire 3s ease-in-out infinite;
-}
-
-/* Pulse animation for alerts */
-@keyframes pulse-red {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse-red {
-  animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(to right, #ef4444, #f97316, #f59e0b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Glass morphism */
-.glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Loading spinner */
-.spinner {
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #ef4444;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Map styles */
-.mapboxgl-popup-content {
-  background: rgba(0, 0, 0, 0.9) !important;
-  color: white !important;
-  border: 1px solid rgba(239, 68, 68, 0.5) !important;
-  border-radius: 8px !important;
-  padding: 12px !important;
-}
-
-.mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
-  border-bottom-color: rgba(0, 0, 0, 0.9) !important;
-}
-
-/* Three.js canvas */
-canvas {
-  touch-action: none;
-}
-
-/* Leva controls customization */
-.leva-c-bDGmTT {
-  background: rgba(0, 0, 0, 0.9) !important;
-  border: 1px solid rgba(239, 68, 68, 0.3) !important;
-}
-
-.leva-c-grzFYX {
-  background: rgba(239, 68, 68, 0.1) !important;
-}
-
-/* Custom animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.5s ease-out;
-}
-
-/* Quantum circuit styling */
-.quantum-circuit {
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(239, 68, 68, 0.1) 50%,
-    transparent 100%);
-  border-left: 2px solid #ef4444;
-  border-right: 2px solid #ef4444;
+::-webkit-scrollbar-corner {
+  background: #111827; /* gray-900 */
 }
