@@ -63,7 +63,7 @@ interface UseRealTimeDataReturn {
   lastUpdated: Date | null;
   refreshData: () => Promise<void>;
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
-  // Add these missing properties that your frontend expects
+  // Legacy properties that your components expect
   fireData: FireData[];
   weatherData: WeatherData | null;
   activeFireCount: number;
@@ -171,7 +171,6 @@ const useRealTimeData = (
     } catch (err) {
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
-          // Request was cancelled, don't update error state
           return;
         }
         console.error('Real-Time Data Fetch Error:', err);
@@ -182,9 +181,9 @@ const useRealTimeData = (
       }
       setConnectionStatus('disconnected');
 
-      // Set fallback data if no data exists
+      // Set fallback demo data if no data exists
       if (!data) {
-        setData({
+        const fallbackData: RealTimeData = {
           active_fires: [
             {
               id: 'demo_fire_001',
@@ -248,7 +247,8 @@ const useRealTimeData = (
             timestamp: new Date().toISOString(),
             data_quality: 'demo'
           }
-        });
+        };
+        setData(fallbackData);
       }
     } finally {
       setLoading(false);
@@ -312,7 +312,7 @@ const useRealTimeData = (
     lastUpdated,
     refreshData,
     connectionStatus,
-    // Backward compatibility properties
+    // Legacy properties for backward compatibility
     fireData,
     weatherData,
     activeFireCount,
@@ -323,5 +323,5 @@ const useRealTimeData = (
   };
 };
 
-// Export as default export
+// CRITICAL: This is the key fix - export as default
 export default useRealTimeData;

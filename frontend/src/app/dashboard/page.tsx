@@ -8,7 +8,7 @@ import {
     Info, Layers, Play, Settings, SlidersHorizontal, Wind, Zap, Loader2, XCircle, CheckCircle
 } from 'lucide-react'
 import { useQuantumPrediction } from '@/hooks/useQuantumPrediction'
-import { useRealTimeData } from '@/hooks/useRealTimeData'
+import useRealTimeData from '@/hooks/useRealTimeData';
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { MetricCard } from '@/components/dashboard/MetricCard'
