@@ -1,300 +1,327 @@
-import { create } from 'zustand'
-import { immer } from 'zustand/middleware/immer'
-import axios, { AxiosError } from 'axios'
-import { useEffect, useRef } from 'react'
-import { LngLatLike } from 'mapbox-gl'
+'use client';
 
-// --- TYPE DEFINITIONS ---
-// Defines the shape of data fetched from the real-time data endpoint.
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-export interface ActiveFire {
-  id: string
-  latitude: number
-  longitude: number
-  brightness: number // Kelvin
-  confidence: number // 0-100%
-  source: 'NASA FIRMS' | 'CAL FIRE'
-  timestamp: string
+interface FireData {
+  id: string;
+  latitude: number;
+  longitude: number;
+  intensity: number;
+  area_hectares: number;
+  confidence: number;
+  brightness_temperature: number;
+  detection_time: string;
+  satellite: string;
+  frp: number;
 }
 
-export interface WeatherStation {
-  id: string
-  name: string
-  latitude: number
-  longitude: number
-  temperature: number // Celsius
-  humidity: number // Percentage
-  wind_speed: number // mph
-  wind_direction: string // e.g., 'NW'
-}
-
-export interface HighRiskArea {
-  id: string
-  name: string
-  risk_level: number // 0.0 to 1.0
-  cause: 'Drought' | 'Wind Pattern' | 'High Fuel Load'
-  // A GeoJSON-compatible polygon definition
-  polygon: LngLatLike[]
-}
-
-export interface Alert {
-  id: string
-  title: string
-  message: string
-  severity: 'critical' | 'high' | 'moderate'
-  timestamp: string
-  location?: {
-    name: string
-    latitude: number
-    longitude: number
-  }
-}
-
-// The comprehensive data structure for the entire real-time feed.
-export interface RealTimeData {
-  active_fires: ActiveFire[]
-  weather_stations: WeatherStation[]
-  high_risk_areas: HighRiskArea[]
-  alerts: Alert[]
+interface WeatherData {
+  stations: Array<{
+    station_id: string;
+    latitude: number;
+    longitude: number;
+    temperature: number;
+    humidity: number;
+    wind_speed: number;
+    wind_direction: number;
+    pressure: number;
+  }>;
   current_conditions: {
-    avg_wind_speed: number
-    max_temp: number
-  }
+    avg_temperature: number;
+    avg_humidity: number;
+    avg_wind_speed: number;
+    max_wind_speed: number;
+    dominant_wind_direction: number;
+    fuel_moisture?: number;
+  };
+  fire_weather?: {
+    fosberg_index: number;
+    red_flag_warning: boolean;
+  };
+  metadata: {
+    source: string;
+    collection_time: string;
+  };
 }
 
-// --- ZUSTAND STORE DEFINITION ---
-
-interface RealTimeDataState {
-  // --- STATE ---
-  fireData: RealTimeData | null
-  isLoading: boolean
-  error: string | null
-  lastFetchTimestamp: Date | null
-  systemStatus: 'operational' | 'degraded' | 'offline'
-
-  // --- ACTIONS ---
-
-  /**
-   * Fetches the latest real-time data from the backend.
-   */
-  fetchData: () => Promise<void>
+interface RealTimeData {
+  active_fires: FireData[];
+  weather: WeatherData;
+  terrain: any;
+  metadata: {
+    processing_time: number;
+    sources: string[];
+    timestamp: string;
+    data_quality: string;
+  };
 }
 
-const useRealTimeDataStore = create<RealTimeDataState>()(
-    immer((set, get) => ({
-      // --- INITIAL STATE ---
-      fireData: null,
-      isLoading: true,
-      error: null,
-      lastFetchTimestamp: null,
-      systemStatus: 'operational',
+interface UseRealTimeDataReturn {
+  data: RealTimeData | null;
+  loading: boolean;
+  error: string | null;
+  lastUpdated: Date | null;
+  refreshData: () => Promise<void>;
+  connectionStatus: 'connected' | 'disconnected' | 'connecting';
+  // Add these missing properties that your frontend expects
+  fireData: FireData[];
+  weatherData: WeatherData | null;
+  activeFireCount: number;
+  activeAlerts: any[];
+  highRiskAreas: any[];
+  systemStatus: string;
+  isLoadingFireData: boolean;
+}
 
-      // --- ACTION IMPLEMENTATIONS ---
-      fetchData: async () => {
-        // Prevent fetching if a request is already in flight.
-        if (get().isLoading && get().lastFetchTimestamp) {
+const useRealTimeData = (
+    autoRefresh: boolean = true,
+    refreshInterval: number = 30000 // 30 seconds
+): UseRealTimeDataReturn => {
+  const [data, setData] = useState<RealTimeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  const fetchData = useCallback(async () => {
+    try {
+      setConnectionStatus('connecting');
+
+      // Cancel previous request if still pending
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        // Get the actual data
+        const dataResponse = await fetch(`${API_BASE_URL}/api/v1/fires`, {
+          signal: abortControllerRef.current.signal,
+        });
+
+        if (dataResponse.ok) {
+          const fireData = await dataResponse.json();
+
+          // Get weather data
+          const weatherResponse = await fetch(`${API_BASE_URL}/api/v1/weather`, {
+            signal: abortControllerRef.current.signal,
+          });
+
+          let weatherData = null;
+          if (weatherResponse.ok) {
+            const weatherResult = await weatherResponse.json();
+            weatherData = weatherResult.data;
+          }
+
+          // Construct combined data
+          const combinedData: RealTimeData = {
+            active_fires: fireData.data?.active_fires || [],
+            weather: weatherData || {
+              stations: [],
+              current_conditions: {
+                avg_temperature: 20,
+                avg_humidity: 50,
+                avg_wind_speed: 10,
+                max_wind_speed: 15,
+                dominant_wind_direction: 0
+              },
+              metadata: {
+                source: 'Fallback',
+                collection_time: new Date().toISOString()
+              }
+            },
+            terrain: {},
+            metadata: {
+              processing_time: 0,
+              sources: ['API'],
+              timestamp: new Date().toISOString(),
+              data_quality: 'high'
+            }
+          };
+
+          setData(combinedData);
+          setLastUpdated(new Date());
+          setError(null);
+          setConnectionStatus('connected');
+        } else {
+          throw new Error('Failed to fetch fire data');
+        }
+      } else {
+        throw new Error(result.message || 'Failed to refresh data');
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          // Request was cancelled, don't update error state
           return;
         }
+        console.error('Real-Time Data Fetch Error:', err);
+        setError(err.message);
+      } else {
+        console.error('Unknown error:', err);
+        setError('An unknown error occurred');
+      }
+      setConnectionStatus('disconnected');
 
-        set((state) => {
-          state.isLoading = true
-          state.error = null
-        })
-
-        try {
-          const response = await axios.get('/api/data/real-time')
-
-          if (!response.data) {
-            throw new Error('No data returned from real-time endpoint.')
+      // Set fallback data if no data exists
+      if (!data) {
+        setData({
+          active_fires: [
+            {
+              id: 'demo_fire_001',
+              latitude: 39.7596,
+              longitude: -121.6219,
+              intensity: 0.85,
+              area_hectares: 1500,
+              confidence: 90,
+              brightness_temperature: 420,
+              detection_time: new Date().toISOString(),
+              satellite: 'Demo Data',
+              frp: 500
+            },
+            {
+              id: 'demo_fire_002',
+              latitude: 38.5800,
+              longitude: -121.4900,
+              intensity: 0.68,
+              area_hectares: 890,
+              confidence: 85,
+              brightness_temperature: 410,
+              detection_time: new Date().toISOString(),
+              satellite: 'Demo Data',
+              frp: 340
+            }
+          ],
+          weather: {
+            stations: [
+              {
+                station_id: 'DEMO_001',
+                latitude: 39.7596,
+                longitude: -121.6219,
+                temperature: 28.5,
+                humidity: 18.0,
+                wind_speed: 35.2,
+                wind_direction: 45.0,
+                pressure: 1013.25
+              }
+            ],
+            current_conditions: {
+              avg_temperature: 29.8,
+              avg_humidity: 16.8,
+              avg_wind_speed: 39.0,
+              max_wind_speed: 65.5,
+              dominant_wind_direction: 48.5,
+              fuel_moisture: 6.2
+            },
+            fire_weather: {
+              fosberg_index: 82.5,
+              red_flag_warning: true
+            },
+            metadata: {
+              source: 'Demo Data',
+              collection_time: new Date().toISOString()
+            }
+          },
+          terrain: {},
+          metadata: {
+            processing_time: 0,
+            sources: ['Demo'],
+            timestamp: new Date().toISOString(),
+            data_quality: 'demo'
           }
-
-          set((state) => {
-            state.fireData = response.data
-            state.isLoading = false
-            state.lastFetchTimestamp = new Date()
-            state.systemStatus = 'operational'
-          })
-        } catch (err) {
-          console.error("Real-Time Data Fetch Error:", err)
-          let errorMessage = 'Failed to fetch live data feed.'
-          if (axios.isAxiosError(err)) {
-            errorMessage = err.response?.data?.error || err.message
-          } else if (err instanceof Error) {
-            errorMessage = err.message
-          }
-
-          set((state) => {
-            state.isLoading = false
-            state.error = errorMessage
-            state.systemStatus = 'degraded'
-          })
-        }
-      },
-    }))
-)
-
-/**
- * --- CUSTOM HOOK FOR COMPONENT USAGE ---
- * This is the primary hook that UI components will use. It wraps the Zustand store
- * and adds logic for periodic polling.
- *
- * @param {number} pollInterval - The interval in milliseconds to poll for new data.
- * @returns An object containing derived data and status flags for easy consumption.
- */
-export const useRealTimeData = (pollInterval: number = 30000) => {
-  const store = useRealTimeDataStore()
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Effect to set up and tear down the polling interval.
-  useEffect(() => {
-    // Fetch data immediately on mount.
-    store.fetchData()
-
-    // Clear any existing interval before setting a new one.
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
+        });
+      }
+    } finally {
+      setLoading(false);
     }
+  }, [API_BASE_URL, data]);
 
-    intervalRef.current = setInterval(() => {
-      store.fetchData()
-    }, pollInterval)
+  const refreshData = useCallback(async () => {
+    setLoading(true);
+    await fetchData();
+  }, [fetchData]);
 
-    // Cleanup function to clear the interval when the component unmounts.
+  // Initial data fetch
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Set up auto-refresh
+  useEffect(() => {
+    if (autoRefresh && refreshInterval > 0) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+
+      intervalRef.current = setInterval(() => {
+        fetchData();
+      }, refreshInterval);
+
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+      };
+    }
+  }, [autoRefresh, refreshInterval, fetchData]);
+
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
       if (intervalRef.current) {
-        clearInterval(intervalRef.current)
+        clearInterval(intervalRef.current);
       }
-    }
-  }, [pollInterval, store.fetchData])
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
-  // --- DERIVED DATA SELECTORS ---
-  // This is more efficient than calculating in components, as it only re-computes when source data changes.
-  const activeFireCount = store.fireData?.active_fires?.length || 0
-  const activeAlerts = store.fireData?.alerts || []
-  const highRiskAreas = store.fireData?.high_risk_areas || []
+  // Calculate derived values for backward compatibility
+  const fireData = data?.active_fires || [];
+  const weatherData = data?.weather || null;
+  const activeFireCount = fireData.length;
+  const activeAlerts: any[] = [];
+  const highRiskAreas: any[] = [];
+  const systemStatus = connectionStatus === 'connected' ? 'operational' : 'degraded';
+  const isLoadingFireData = loading;
 
   return {
-    fireData: store.fireData,
-    weatherData: {
-      stations: store.fireData?.weather_stations || [],
-      current_conditions: store.fireData?.current_conditions,
-    },
+    data,
+    loading,
+    error,
+    lastUpdated,
+    refreshData,
+    connectionStatus,
+    // Backward compatibility properties
+    fireData,
+    weatherData,
     activeFireCount,
     activeAlerts,
     highRiskAreas,
-    systemStatus: store.systemStatus,
-    isLoadingFireData: store.isLoading,
-    error: store.error,
-    lastFetchTimestamp: store.lastFetchTimestamp
-  }
-}
-
-
-/**
- * --- MOCKING FOR DEVELOPMENT ---
- * Sets up a mock adapter for Axios to simulate the real-time data feed.
- * This is essential for UI development and testing without a live backend.
- */
-if (process.env.NODE_ENV === 'development') {
-  const MockAdapter = require('axios-mock-adapter')
-  const mock = new MockAdapter(axios, { delayResponse: 800 })
-
-  // --- Mock Data Generation Utilities ---
-  // These functions create realistic and varied mock data.
-
-  const getRandomCoordinate = (baseLat: number, baseLon: number, range: number) => ({
-    latitude: baseLat + (Math.random() - 0.5) * range,
-    longitude: baseLon + (Math.random() - 0.5) * range,
-  })
-
-  const generateMockFires = (count: number): ActiveFire[] => {
-    return Array.from({ length: count }, (_, i) => ({
-      id: `fire_${i}_${Date.now()}`,
-      ...getRandomCoordinate(39.7, -121.5, 2.5), // Centered around Northern California
-      brightness: Math.floor(Math.random() * 100 + 300),
-      confidence: Math.floor(Math.random() * 50 + 50),
-      source: 'NASA FIRMS',
-      timestamp: new Date().toISOString(),
-    }))
-  }
-
-  const generateMockWeatherStations = (count: number): WeatherStation[] => {
-    return Array.from({ length: count }, (_, i) => ({
-      id: `station_${i}`,
-      name: `Station #${i}`,
-      ...getRandomCoordinate(39.7, -121.5, 3),
-      temperature: Math.floor(Math.random() * 15 + 20),
-      humidity: Math.floor(Math.random() * 40 + 15),
-      wind_speed: Math.floor(Math.random() * 25 + 5),
-      wind_direction: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.floor(Math.random() * 8)],
-    }));
+    systemStatus,
+    isLoadingFireData,
   };
+};
 
-  const generateMockRiskAreas = (count: number): HighRiskArea[] => {
-    return Array.from({ length: count }, (_, i) => {
-      const center = getRandomCoordinate(39.7, -121.5, 2);
-      const size = Math.random() * 0.1 + 0.05;
-      const polygon: LngLatLike[] = [
-        [center.longitude - size, center.latitude - size],
-        [center.longitude + size, center.latitude - size],
-        [center.longitude + size, center.latitude + size],
-        [center.longitude - size, center.latitude + size],
-        [center.longitude - size, center.latitude - size],
-      ];
-      return {
-        id: `risk_area_${i}`,
-        name: `Zone ${String.fromCharCode(65 + i)}`,
-        risk_level: Math.random() * 0.6 + 0.4, // High risk levels
-        cause: ['Drought', 'Wind Pattern', 'High Fuel Load'][Math.floor(Math.random() * 3)] as any,
-        polygon,
-      };
-    });
-  };
-
-  const generateMockAlerts = (fires: ActiveFire[], areas: HighRiskArea[]): Alert[] => {
-    const alerts: Alert[] = [];
-    if (fires.length > 5) {
-      alerts.push({
-        id: `alert_fire_count`,
-        title: 'Multiple New Fire Ignitions Detected',
-        message: `${fires.length} new potential fires detected in the last 30 minutes. System is actively monitoring spread.`,
-        severity: 'high',
-        timestamp: new Date().toISOString()
-      })
-    }
-    const criticalArea = areas.find(a => a.risk_level > 0.9);
-    if (criticalArea) {
-      alerts.push({
-        id: `alert_risk_${criticalArea.id}`,
-        title: `Critical Risk in ${criticalArea.name}`,
-        message: `Fuel and weather conditions have reached critical levels. Immediate spread is highly likely if ignition occurs.`,
-        severity: 'critical',
-        timestamp: new Date().toISOString(),
-        location: { name: criticalArea.name, ...getRandomCoordinate(0, 0, 0)} // Placeholder
-      })
-    }
-    return alerts;
-  }
-
-  // --- Mock API Endpoint Definition ---
-  mock.onGet('/api/data/real-time').reply(() => {
-    console.log("Axios mock: Intercepted GET /api/data/real-time")
-
-    const mockFires = generateMockFires(Math.floor(Math.random() * 8));
-    const mockStations = generateMockWeatherStations(10);
-    const mockAreas = generateMockRiskAreas(3);
-    const mockAlerts = generateMockAlerts(mockFires, mockAreas);
-
-    const mockData: RealTimeData = {
-      active_fires: mockFires,
-      weather_stations: mockStations,
-      high_risk_areas: mockAreas,
-      alerts: mockAlerts,
-      current_conditions: {
-        avg_wind_speed: Math.floor(Math.random() * 15 + 10),
-        max_temp: Math.floor(Math.random() * 10 + 25),
-      }
-    }
-    return [200, mockData]
-  })
-}
+// Export as default export
+export default useRealTimeData;

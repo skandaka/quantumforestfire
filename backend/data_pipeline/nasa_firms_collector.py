@@ -27,10 +27,10 @@ class NASAFIRMSCollector:
         self._is_healthy = False
 
     async def initialize(self):
-        """Initialize the NASA FIRMS collector"""
+        from utils.ssl_helpers import create_verified_session
         self.session = await create_verified_session()
         self._is_healthy = True
-        logger.info("NASA FIRMS collector initialized")
+        logger.info("Collector initialized")
 
     def is_healthy(self) -> bool:
         """Check if collector is healthy"""
@@ -114,6 +114,44 @@ class NASAFIRMSCollector:
 
                 }
 
+            }
+
+    async def collect(self) -> Dict[str, Any]:
+        """Collect fire data - main entry point for data collection"""
+        try:
+            if not self.session:
+                logger.error("Session not initialized. Call initialize() first.")
+                return {
+                    'active_fires': [],
+                    'metadata': {
+                        'source': 'NASA FIRMS',
+                        'collection_time': datetime.now().isoformat(),
+                        'error': 'Session not initialized'
+                    }
+                }
+
+            # Use default bounds for California region
+            bounds = {
+                'north': 42.0,
+                'south': 32.5,
+                'east': -114.0,
+                'west': -124.5
+            }
+
+            from datetime import datetime, timedelta
+            start_date = datetime.now() - timedelta(days=1)
+            end_date = datetime.now()
+
+            return await self.get_active_fires(bounds, start_date, end_date)
+        except Exception as e:
+            logger.error(f"Error in NASA FIRMS collect: {str(e)}")
+            return {
+                'active_fires': [],
+                'metadata': {
+                    'source': 'NASA FIRMS',
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
+                }
             }
 
     async def get_historical_fires(

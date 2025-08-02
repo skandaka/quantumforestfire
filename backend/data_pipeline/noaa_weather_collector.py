@@ -150,6 +150,30 @@ class NOAAWeatherCollector:
             logger.error(f"Error getting station observations: {str(e)}")
             return None
 
+    async def collect(self) -> Dict[str, Any]:
+        """Collect weather data - main entry point for data collection"""
+        try:
+            # Use default bounds for California region
+            bounds = {
+                'north': 42.0,
+                'south': 32.5,
+                'east': -114.0,
+                'west': -124.5
+            }
+
+            return await self.get_weather_data(bounds)
+        except Exception as e:
+            logger.error(f"Error in NOAA collect: {str(e)}")
+            return {
+                'stations': [],
+                'current_conditions': {},
+                'metadata': {
+                    'source': 'NOAA',
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
+                }
+            }
+
     def _convert_wind_speed(self, speed_ms: Optional[float]) -> Optional[float]:
         """Convert wind speed from m/s to mph"""
         if speed_ms is not None:

@@ -617,6 +617,31 @@ class OpenMeteoWeatherCollector:
             }
         }
 
+    async def collect(self) -> Dict[str, Any]:
+        """Collect weather data - main entry point for data collection"""
+        try:
+            # Use default bounds for California region
+            bounds = {
+                'north': 42.0,
+                'south': 32.5,
+                'east': -114.0,
+                'west': -124.5
+            }
+
+            return await self.get_weather_data(bounds)
+        except Exception as e:
+            logger.error(f"Error in OpenMeteo collect: {str(e)}")
+            return {
+                'stations': [],
+                'current_conditions': {},
+                'metadata': {
+                    'source': 'Open-Meteo',
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
+                }
+            }
+
+
     def is_healthy(self) -> bool:
         """Check collector health status"""
         return (

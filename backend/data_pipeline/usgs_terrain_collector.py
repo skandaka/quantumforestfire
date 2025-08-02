@@ -88,6 +88,32 @@ class USGSTerrainCollector:
                 }
             }
 
+    async def collect(self) -> Dict[str, Any]:
+        """Collect terrain data - main entry point for data collection"""
+        try:
+            # Use default bounds for California region
+            bounds = {
+                'north': 42.0,
+                'south': 32.5,
+                'east': -114.0,
+                'west': -124.5
+            }
+
+            return await self.get_terrain_data(bounds)
+        except Exception as e:
+            logger.error(f"Error in USGS collect: {str(e)}")
+            return {
+                'elevation': [],
+                'slope': [],
+                'aspect': [],
+                'metadata': {
+                    'source': 'USGS',
+                    'collection_time': datetime.now().isoformat(),
+                    'error': str(e)
+                }
+            }
+
+
     async def _get_elevation_at_point(self, lat: float, lon: float) -> float:
         """Get elevation for a single point from USGS"""
         try:
