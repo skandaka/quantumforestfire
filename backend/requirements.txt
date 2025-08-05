@@ -3,6 +3,7 @@ uvicorn[standard]
 redis
 pydantic>=2.0
 pydantic-settings
+python-dotenv
 numpy
 aiohttp
 pandas

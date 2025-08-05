@@ -6,7 +6,7 @@ import { Flame, AlertTriangle, Activity, Cpu, Play, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { MetricCard } from '@/components/dashboard/MetricCard'
-import useRealTimeData from '@/hooks/useRealTimeData';
+import { useRealTimeData } from '@/hooks/useRealTimeData'
 
 const ParticleBackground = () => {
   useEffect(() => {

@@ -5,6 +5,10 @@ from typing import List, Any, Optional
 
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 APP_ENV = os.getenv("APP_ENV", "development")

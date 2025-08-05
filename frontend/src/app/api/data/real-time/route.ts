@@ -77,7 +77,11 @@ export async function GET() {
                     message: `Fuel and weather conditions have reached critical levels. Immediate spread is highly likely if ignition occurs.`,
                     severity: 'critical',
                     timestamp: new Date().toISOString(),
-                    location: { name: criticalArea.name, latitude: criticalArea.polygon[0][1], longitude: criticalArea.polygon[0][0]}
+                    location: { 
+                        name: criticalArea.name, 
+                        latitude: Array.isArray(criticalArea.polygon[0]) ? criticalArea.polygon[0][1] : 0, 
+                        longitude: Array.isArray(criticalArea.polygon[0]) ? criticalArea.polygon[0][0] : 0
+                    }
                 })
             }
             return alerts;

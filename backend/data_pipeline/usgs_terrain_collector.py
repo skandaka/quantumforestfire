@@ -4,6 +4,8 @@ Location: backend/data_pipeline/usgs_terrain_collector.py
 """
 
 import aiohttp
+import asyncio
+import json
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -24,7 +26,8 @@ class USGSTerrainCollector:
 
     async def initialize(self):
         """Initialize the collector"""
-        self.session = await create_verified_session()
+        # Create session with timeout settings
+        self.session = await create_verified_session(timeout=30)
         self._is_healthy = True
         logger.info("USGS Terrain collector initialized")
 
@@ -44,6 +47,8 @@ class USGSTerrainCollector:
             lon_step = (bounds['east'] - bounds['west']) / grid_size
 
             elevation_grid = np.zeros((grid_size, grid_size))
+            api_failures = 0
+            max_failures = 10  # Allow some API failures before falling back to simulation
 
             # Sample elevation at grid points
             for i in range(grid_size):
@@ -53,6 +58,15 @@ class USGSTerrainCollector:
 
                     elevation = await self._get_elevation_at_point(lat, lon)
                     elevation_grid[i, j] = elevation
+                    
+                    # Track API failures
+                    if elevation == 0.0:
+                        api_failures += 1
+                    
+                    # If too many failures, switch to simulated data
+                    if api_failures > max_failures:
+                        logger.warning("Too many USGS API failures, switching to simulated terrain data")
+                        return self._generate_simulated_terrain_data(bounds, grid_size)
 
             # Calculate slope and aspect from elevation
             dy, dx = np.gradient(elevation_grid, lat_step * 111000, lon_step * 111000)  # Convert to meters
@@ -67,26 +81,66 @@ class USGSTerrainCollector:
                 'metadata': {
                     'source': 'USGS',
                     'resolution_meters': resolution,
-                    'collection_time': datetime.now().isoformat()
+                    'collection_time': datetime.now().isoformat(),
+                    'api_failures': api_failures
                 }
             }
 
         except Exception as e:
             logger.error(f"Error collecting USGS data: {str(e)}")
             self._is_healthy = False
-            # Return default terrain data
-            grid_size = 50
-            return {
-                'elevation': np.random.rand(grid_size, grid_size) * 1000 + 500,
-                'slope': np.random.rand(grid_size, grid_size) * 45,
-                'aspect': np.random.rand(grid_size, grid_size) * 360,
-                'metadata': {
-                    'source': 'USGS',
-                    'resolution_meters': resolution,
-                    'collection_time': datetime.now().isoformat(),
-                    'error': str(e)
-                }
+            # Return simulated terrain data
+            return self._generate_simulated_terrain_data(bounds, 50)
+
+    def _generate_simulated_terrain_data(self, bounds: Dict[str, float], grid_size: int) -> Dict[str, Any]:
+        """Generate realistic simulated terrain data for California"""
+        # California terrain characteristics
+        base_elevation = 500  # meters
+        max_elevation = 3000  # meters for Sierra Nevada
+        
+        # Create elevation grid with realistic California patterns
+        elevation_grid = np.zeros((grid_size, grid_size))
+        
+        for i in range(grid_size):
+            for j in range(grid_size):
+                # Distance from coast (west side)
+                coast_distance = j / grid_size
+                
+                # Distance from north (higher elevations in north)
+                north_factor = i / grid_size
+                
+                # Base elevation increases inland and northward
+                base = base_elevation + coast_distance * 1500 + north_factor * 500
+                
+                # Add some randomness for hills and valleys
+                noise = np.random.normal(0, 200)
+                
+                # Simulate mountain ranges (Sierra Nevada pattern)
+                if 0.6 < coast_distance < 0.9 and 0.3 < north_factor < 0.8:
+                    mountain_height = 2000 * np.sin(j * 0.3) * np.sin(i * 0.2)
+                    base += max(0, mountain_height)
+                
+                elevation_grid[i, j] = max(0, base + noise)
+        
+        # Calculate slope and aspect
+        lat_step = (bounds['north'] - bounds['south']) / grid_size
+        lon_step = (bounds['east'] - bounds['west']) / grid_size
+        dy, dx = np.gradient(elevation_grid, lat_step * 111000, lon_step * 111000)
+        slope = np.degrees(np.arctan(np.sqrt(dx**2 + dy**2)))
+        aspect = np.degrees(np.arctan2(-dx, dy))
+        aspect[aspect < 0] += 360
+        
+        return {
+            'elevation': elevation_grid,
+            'slope': slope,
+            'aspect': aspect,
+            'metadata': {
+                'source': 'USGS_Simulated',
+                'resolution_meters': 30,
+                'collection_time': datetime.now().isoformat(),
+                'note': 'Simulated terrain data due to API issues'
             }
+        }
 
     async def collect(self) -> Dict[str, Any]:
         """Collect terrain data - main entry point for data collection"""
@@ -129,23 +183,52 @@ class USGSTerrainCollector:
 
             async with self.session.get(elevation_url, params=params) as response:
                 if response.status == 200:
-                    data = await response.json()
-
-                    # Extract elevation value
-                    if 'value' in data:
-                        try:
-                            return float(data['value'])
-                        except (ValueError, TypeError):
-                            logger.warning(f"Invalid elevation value for {lat}, {lon}")
-                            return 0.0
-                    else:
+                    response_text = await response.text()
+                    
+                    # Check if response is empty
+                    if not response_text.strip():
+                        logger.warning(f"Empty response from USGS API for {lat}, {lon}")
                         return 0.0
+                    
+                    try:
+                        data = json.loads(response_text)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Invalid JSON response from USGS API for {lat}, {lon}: {response_text[:100]}")
+                        return 0.0
+
+                    # Extract elevation value - USGS API format is different
+                    if isinstance(data, dict):
+                        # Try different possible response formats
+                        if 'USGS_Elevation_Point_Query_Service' in data:
+                            elevation_query = data['USGS_Elevation_Point_Query_Service']
+                            if 'Elevation_Query' in elevation_query:
+                                elevation = elevation_query['Elevation_Query'].get('Elevation')
+                                if elevation is not None:
+                                    try:
+                                        return float(elevation)
+                                    except (ValueError, TypeError):
+                                        logger.warning(f"Invalid elevation value for {lat}, {lon}: {elevation}")
+                                        return 0.0
+                        
+                        # Alternative format
+                        elif 'value' in data:
+                            try:
+                                return float(data['value'])
+                            except (ValueError, TypeError):
+                                logger.warning(f"Invalid elevation value for {lat}, {lon}")
+                                return 0.0
+                    
+                    logger.warning(f"Unexpected USGS API response format for {lat}, {lon}: {data}")
+                    return 0.0
                 else:
-                    logger.error(f"USGS API returned status {response.status}")
+                    logger.error(f"USGS API returned status {response.status} for {lat}, {lon}")
                     return 0.0
 
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout getting elevation for {lat}, {lon}")
+            return 0.0
         except Exception as e:
-            logger.error(f"Error getting elevation: {str(e)}")
+            logger.warning(f"Error getting elevation for {lat}, {lon}: {str(e)}")
             return 0.0
 
 

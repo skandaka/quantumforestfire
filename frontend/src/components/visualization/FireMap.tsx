@@ -1,516 +1,455 @@
-'use client';
+'use client'
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import React, { useEffect, useRef, useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { Flame, Wind, Thermometer, Droplets, AlertTriangle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-// Set Mapbox access token
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1Ijoic2thdGUiLCJhIjoiY21kOTlxOW1iMDV1bzJtcHY3bmFobnVmcCJ9.zDBww977UxLmhPDSeZk5Jw';
+// --- TYPE DEFINITIONS ---
+export interface FireDataPoint {
+  id: string
+  latitude: number
+  longitude: number
+  intensity: number // 0-1
+  temperature: number // Celsius
+  area: number // hectares
+  confidence: number // 0-100%
+  timestamp: string
+  source: 'NASA_FIRMS' | 'CAL_FIRE' | 'NOAA'
+  type: 'active' | 'predicted' | 'historical'
+}
 
-interface FireData {
-    id: string;
-    latitude: number;
-    longitude: number;
-    intensity: number;
-    area_hectares: number;
-    confidence: number;
-    brightness_temperature: number;
-    detection_time: string;
-    satellite: string;
-    frp: number;
+export interface WeatherData {
+  latitude: number
+  longitude: number
+  temperature: number
+  humidity: number
+  windSpeed: number
+  windDirection: number // degrees
+  pressure: number
+}
+
+export interface HeatmapCell {
+  latitude: number
+  longitude: number
+  riskLevel: number // 0-1
+  factors: {
+    vegetation: number
+    weather: number
+    topography: number
+    human: number
+  }
 }
 
 interface FireMapProps {
-    fires: FireData[];
-    weather?: any;
-    terrain?: any;
-    center?: [number, number];
-    zoom?: number;
-    showHeatmap?: boolean;
-    showParadiseDemo?: boolean;
-    className?: string;
+  fires: FireDataPoint[]
+  weatherStations?: WeatherData[]
+  heatmapData?: HeatmapCell[]
+  center?: [number, number]
+  zoom?: number
+  showHeatmap?: boolean
+  showWeather?: boolean
+  showEmberPrediction?: boolean
+  onFireClick?: (fire: FireDataPoint) => void
+  className?: string
+  interactive?: boolean
+  timeRange?: [Date, Date]
 }
 
-const FireMap: React.FC<FireMapProps> = ({
-                                             fires = [],
-                                             weather,
-                                             terrain,
-                                             center = [-121.6219, 39.7596], // Paradise, CA
-                                             zoom = 8,
-                                             showHeatmap = true,
-                                             showParadiseDemo = false,
-                                             className = ''
-                                         }) => {
-    const mapContainer = useRef<HTMLDivElement>(null);
-    const map = useRef<mapboxgl.Map | null>(null);
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [selectedFire, setSelectedFire] = useState<FireData | null>(null);
-    const markersRef = useRef<mapboxgl.Marker[]>([]);
+// --- UTILITY FUNCTIONS ---
+const getFireColor = (intensity: number, temperature: number): string => {
+  if (intensity > 0.8 || temperature > 1000) return '#ffffff' // White hot
+  if (intensity > 0.6 || temperature > 600) return '#ffff00' // Yellow
+  if (intensity > 0.4 || temperature > 400) return '#ff8c00' // Orange
+  if (intensity > 0.2 || temperature > 200) return '#ff4500' // Red-orange
+  return '#ff0000' // Red
+}
 
-    // Initialize map
-    useEffect(() => {
-        if (!mapContainer.current || map.current) return;
+const getFireSize = (area: number, intensity: number): number => {
+  const baseSize = 8
+  const areaMultiplier = Math.min(3, Math.sqrt(area / 100))
+  const intensityMultiplier = 1 + (intensity * 1.5)
+  return baseSize * areaMultiplier * intensityMultiplier
+}
 
-        try {
-            map.current = new mapboxgl.Map({
-                container: mapContainer.current,
-                style: 'mapbox://styles/mapbox/satellite-streets-v12',
-                center: center,
-                zoom: zoom,
-                pitch: 45,
-                bearing: 0
-            });
+const getRiskColor = (riskLevel: number): string => {
+  if (riskLevel > 0.8) return 'rgba(255, 0, 0, 0.6)'
+  if (riskLevel > 0.6) return 'rgba(255, 100, 0, 0.5)'
+  if (riskLevel > 0.4) return 'rgba(255, 200, 0, 0.4)'
+  if (riskLevel > 0.2) return 'rgba(255, 255, 0, 0.3)'
+  return 'rgba(0, 255, 0, 0.2)'
+}
 
-            map.current.on('load', () => {
-                setIsLoaded(true);
-                initializeMapLayers();
-            });
+// --- MAIN COMPONENT ---
+export function FireMap({
+  fires,
+  weatherStations = [],
+  heatmapData = [],
+  center = [-121.6219, 39.7596], // Default to Paradise, CA
+  zoom = 10,
+  showHeatmap = true,
+  showWeather = true,
+  showEmberPrediction = false,
+  onFireClick,
+  className,
+  interactive = true,
+  timeRange
+}: FireMapProps) {
+  const mapRef = useRef<HTMLDivElement>(null)
+  const [mapBounds, setMapBounds] = useState({ width: 800, height: 600 })
+  const [selectedFire, setSelectedFire] = useState<FireDataPoint | null>(null)
+  const [currentTime, setCurrentTime] = useState(new Date())
 
-            // Add navigation controls
-            map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  // Update current time for animations
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(interval)
+  }, [])
 
-            // Add fullscreen control
-            map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+  // Calculate map bounds
+  const bounds = useMemo(() => {
+    if (fires.length === 0) {
+      return {
+        minLat: center[1] - 0.1,
+        maxLat: center[1] + 0.1,
+        minLng: center[0] - 0.1,
+        maxLng: center[0] + 0.1
+      }
+    }
 
-        } catch (error) {
-            console.error('Error initializing map:', error);
-        }
+    const lats = fires.map(f => f.latitude)
+    const lngs = fires.map(f => f.longitude)
+    
+    return {
+      minLat: Math.min(...lats) - 0.05,
+      maxLat: Math.max(...lats) + 0.05,
+      minLng: Math.min(...lngs) - 0.05,
+      maxLng: Math.max(...lngs) + 0.05
+    }
+  }, [fires, center])
 
-        return () => {
-            if (map.current) {
-                map.current.remove();
-                map.current = null;
-            }
-        };
-    }, [center, zoom]);
+  // Convert lat/lng to pixel coordinates
+  const coordToPixel = (lat: number, lng: number) => {
+    const x = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * mapBounds.width
+    const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * mapBounds.height
+    return { x: Math.max(0, Math.min(mapBounds.width, x)), y: Math.max(0, Math.min(mapBounds.height, y)) }
+  }
 
-    // Initialize map layers for fire visualization
-    const initializeMapLayers = useCallback(() => {
-        if (!map.current || !isLoaded) return;
+  // Filter fires by time range if provided
+  const filteredFires = useMemo(() => {
+    if (!timeRange) return fires
+    return fires.filter(fire => {
+      const fireTime = new Date(fire.timestamp)
+      return fireTime >= timeRange[0] && fireTime <= timeRange[1]
+    })
+  }, [fires, timeRange])
 
-        try {
-            // Add fire heatmap source
-            if (!map.current.getSource('fires-heatmap')) {
-                map.current.addSource('fires-heatmap', {
-                    type: 'geojson',
-                    data: {
-                        type: 'FeatureCollection',
-                        features: []
-                    }
-                });
+  // Handle fire click
+  const handleFireClick = (fire: FireDataPoint) => {
+    setSelectedFire(fire)
+    onFireClick?.(fire)
+  }
 
-                // Add heatmap layer
-                map.current.addLayer({
-                    id: 'fires-heatmap-layer',
-                    type: 'heatmap',
-                    source: 'fires-heatmap',
-                    maxzoom: 15,
-                    paint: {
-                        'heatmap-weight': [
-                            'interpolate',
-                            ['linear'],
-                            ['get', 'intensity'],
-                            0, 0,
-                            1, 1
-                        ],
-                        'heatmap-intensity': [
-                            'interpolate',
-                            ['linear'],
-                            ['zoom'],
-                            0, 1,
-                            15, 3
-                        ],
-                        'heatmap-color': [
-                            'interpolate',
-                            ['linear'],
-                            ['heatmap-density'],
-                            0, 'rgba(255,255,255,0)',
-                            0.2, 'rgb(255,255,0)',
-                            0.4, 'rgb(255,165,0)',
-                            0.6, 'rgb(255,69,0)',
-                            0.8, 'rgb(255,0,0)',
-                            1, 'rgb(128,0,0)'
-                        ],
-                        'heatmap-radius': [
-                            'interpolate',
-                            ['linear'],
-                            ['zoom'],
-                            0, 20,
-                            15, 50
-                        ],
-                        'heatmap-opacity': [
-                            'interpolate',
-                            ['linear'],
-                            ['zoom'],
-                            7, 1,
-                            15, 0.8
-                        ]
-                    }
-                });
+  // Resize handler
+  useEffect(() => {
+    const updateSize = () => {
+      if (mapRef.current) {
+        const rect = mapRef.current.getBoundingClientRect()
+        setMapBounds({ width: rect.width, height: rect.height })
+      }
+    }
 
-                // Add fire points layer
-                map.current.addLayer({
-                    id: 'fires-points',
-                    type: 'circle',
-                    source: 'fires-heatmap',
-                    minzoom: 10,
-                    paint: {
-                        'circle-radius': [
-                            'interpolate',
-                            ['linear'],
-                            ['get', 'intensity'],
-                            0, 5,
-                            1, 20
-                        ],
-                        'circle-color': [
-                            'interpolate',
-                            ['linear'],
-                            ['get', 'intensity'],
-                            0, '#ffff00',
-                            0.5, '#ff8c00',
-                            1, '#ff0000'
-                        ],
-                        'circle-stroke-color': '#ffffff',
-                        'circle-stroke-width': 2,
-                        'circle-opacity': 0.8
-                    }
-                });
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
+  }, [])
 
-                // Add fire labels
-                map.current.addLayer({
-                    id: 'fires-labels',
-                    type: 'symbol',
-                    source: 'fires-heatmap',
-                    minzoom: 12,
-                    layout: {
-                        'text-field': ['concat', ['get', 'area_hectares'], ' ha'],
-                        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                        'text-size': 10,
-                        'text-offset': [0, 1.5],
-                        'text-anchor': 'top'
-                    },
-                    paint: {
-                        'text-color': '#ffffff',
-                        'text-halo-color': '#000000',
-                        'text-halo-width': 1
-                    }
-                });
+  return (
+    <div 
+      ref={mapRef}
+      className={cn(
+        "relative w-full h-full bg-gradient-to-br from-green-900/20 via-brown-800/30 to-gray-800/40",
+        "overflow-hidden rounded-lg border border-gray-700",
+        interactive && "cursor-crosshair",
+        className
+      )}
+    >
+      {/* Background Terrain */}
+      <div className="absolute inset-0 opacity-30">
+        <div className="w-full h-full bg-gradient-to-br from-green-800/40 via-yellow-800/30 to-brown-800/40" />
+        {/* Terrain lines */}
+        <svg className="absolute inset-0 w-full h-full opacity-20">
+          <defs>
+            <pattern id="terrain" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
+              <path d="M0,25 Q12.5,15 25,25 T50,25" stroke="#4ade80" strokeWidth="1" fill="none" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#terrain)" />
+        </svg>
+      </div>
 
-                // Add click handler for fire points
-                map.current.on('click', 'fires-points', (e) => {
-                    if (e.features && e.features[0]) {
-                        const feature = e.features[0];
-                        const properties = feature.properties;
-
-                        if (properties) {
-                            setSelectedFire({
-                                id: properties.id,
-                                latitude: properties.latitude,
-                                longitude: properties.longitude,
-                                intensity: properties.intensity,
-                                area_hectares: properties.area_hectares,
-                                confidence: properties.confidence,
-                                brightness_temperature: properties.brightness_temperature,
-                                detection_time: properties.detection_time,
-                                satellite: properties.satellite,
-                                frp: properties.frp
-                            });
-
-                            // Create popup
-                            const popup = new mapboxgl.Popup()
-                                .setLngLat([properties.longitude, properties.latitude])
-                                .setHTML(`
-                  <div class="fire-popup">
-                    <h3>Active Fire</h3>
-                    <p><strong>Intensity:</strong> ${(properties.intensity * 100).toFixed(1)}%</p>
-                    <p><strong>Area:</strong> ${properties.area_hectares} hectares</p>
-                    <p><strong>Confidence:</strong> ${properties.confidence}%</p>
-                    <p><strong>Temperature:</strong> ${properties.brightness_temperature}°C</p>
-                    <p><strong>Satellite:</strong> ${properties.satellite}</p>
-                    <p><strong>Detection:</strong> ${new Date(properties.detection_time).toLocaleString()}</p>
-                  </div>
-                `)
-                                .addTo(map.current!);
-                        }
-                    }
-                });
-
-                // Change cursor on hover
-                map.current.on('mouseenter', 'fires-points', () => {
-                    if (map.current) {
-                        map.current.getCanvas().style.cursor = 'pointer';
-                    }
-                });
-
-                map.current.on('mouseleave', 'fires-points', () => {
-                    if (map.current) {
-                        map.current.getCanvas().style.cursor = '';
-                    }
-                });
-            }
-
-            if (showParadiseDemo) {
-                addParadiseDemoLayers();
-            }
-
-        } catch (error) {
-            console.error('Error initializing map layers:', error);
-        }
-    }, [isLoaded, showParadiseDemo]);
-
-    // Add Paradise demo specific layers
-    const addParadiseDemoLayers = useCallback(() => {
-        if (!map.current || !isLoaded) return;
-
-        try {
-            // Paradise town boundary
-            if (!map.current.getSource('paradise-boundary')) {
-                map.current.addSource('paradise-boundary', {
-                    type: 'geojson',
-                    data: {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'Polygon',
-                            coordinates: [[
-                                [-121.65, 39.73],
-                                [-121.58, 39.73],
-                                [-121.58, 39.78],
-                                [-121.65, 39.78],
-                                [-121.65, 39.73]
-                            ]]
-                        },
-                        properties: {
-                            name: 'Paradise, CA'
-                        }
-                    }
-                });
-
-                map.current.addLayer({
-                    id: 'paradise-boundary-fill',
-                    type: 'fill',
-                    source: 'paradise-boundary',
-                    paint: {
-                        'fill-color': '#ff9900',
-                        'fill-opacity': 0.3
-                    }
-                });
-
-                map.current.addLayer({
-                    id: 'paradise-boundary-line',
-                    type: 'line',
-                    source: 'paradise-boundary',
-                    paint: {
-                        'line-color': '#ff6600',
-                        'line-width': 3
-                    }
-                });
-
-                map.current.addLayer({
-                    id: 'paradise-label',
-                    type: 'symbol',
-                    source: 'paradise-boundary',
-                    layout: {
-                        'text-field': 'Paradise, CA',
-                        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                        'text-size': 16,
-                        'text-anchor': 'center'
-                    },
-                    paint: {
-                        'text-color': '#ffffff',
-                        'text-halo-color': '#000000',
-                        'text-halo-width': 2
-                    }
-                });
-            }
-
-            // Historical fire origin point
-            if (!map.current.getSource('fire-origin')) {
-                map.current.addSource('fire-origin', {
-                    type: 'geojson',
-                    data: {
-                        type: 'Feature',
-                        geometry: {
-                            type: 'Point',
-                            coordinates: [-121.605, 39.794] // Near Pulga
-                        },
-                        properties: {
-                            name: 'Camp Fire Origin',
-                            description: 'November 8, 2018 - 6:30 AM'
-                        }
-                    }
-                });
-
-                map.current.addLayer({
-                    id: 'fire-origin-point',
-                    type: 'circle',
-                    source: 'fire-origin',
-                    paint: {
-                        'circle-radius': 12,
-                        'circle-color': '#ff0000',
-                        'circle-stroke-color': '#ffffff',
-                        'circle-stroke-width': 3
-                    }
-                });
-
-                map.current.addLayer({
-                    id: 'fire-origin-label',
-                    type: 'symbol',
-                    source: 'fire-origin',
-                    layout: {
-                        'text-field': 'Fire Origin\n6:30 AM',
-                        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                        'text-size': 12,
-                        'text-offset': [0, 2],
-                        'text-anchor': 'top'
-                    },
-                    paint: {
-                        'text-color': '#ffffff',
-                        'text-halo-color': '#000000',
-                        'text-halo-width': 2
-                    }
-                });
-            }
-
-        } catch (error) {
-            console.error('Error adding Paradise demo layers:', error);
-        }
-    }, [isLoaded]);
-
-    // Update fire data
-    useEffect(() => {
-        if (!map.current || !isLoaded || !fires.length) return;
-
-        try {
-            const geojsonData = {
-                type: 'FeatureCollection' as const,
-                features: fires.map(fire => ({
-                    type: 'Feature' as const,
-                    geometry: {
-                        type: 'Point' as const,
-                        coordinates: [fire.longitude, fire.latitude]
-                    },
-                    properties: {
-                        id: fire.id,
-                        latitude: fire.latitude,
-                        longitude: fire.longitude,
-                        intensity: fire.intensity,
-                        area_hectares: fire.area_hectares,
-                        confidence: fire.confidence,
-                        brightness_temperature: fire.brightness_temperature,
-                        detection_time: fire.detection_time,
-                        satellite: fire.satellite,
-                        frp: fire.frp
-                    }
-                }))
-            };
-
-            const source = map.current.getSource('fires-heatmap') as mapboxgl.GeoJSONSource;
-            if (source) {
-                source.setData(geojsonData);
-            }
-
-            // Update layer visibility based on props
-            if (map.current.getLayer('fires-heatmap-layer')) {
-                map.current.setLayoutProperty(
-                    'fires-heatmap-layer',
-                    'visibility',
-                    showHeatmap ? 'visible' : 'none'
-                );
-            }
-
-        } catch (error) {
-            console.error('Error updating fire data:', error);
-        }
-    }, [fires, isLoaded, showHeatmap]);
-
-    // Paradise demo effect
-    useEffect(() => {
-        if (showParadiseDemo && isLoaded) {
-            // Center on Paradise
-            map.current?.easeTo({
-                center: [-121.6219, 39.7596],
-                zoom: 11,
-                duration: 2000
-            });
-        }
-    }, [showParadiseDemo, isLoaded]);
-
-    return (
-        <div className={`relative w-full h-full ${className}`}>
-            <div ref={mapContainer} className="w-full h-full" />
-
-            {/* Fire statistics overlay */}
-            {fires.length > 0 && (
-                <div className="absolute top-4 left-4 bg-black bg-opacity-75 text-white p-4 rounded-lg">
-                    <h3 className="text-lg font-bold mb-2">Fire Statistics</h3>
-                    <div className="space-y-1 text-sm">
-                        <div>Active Fires: <span className="font-semibold text-red-400">{fires.length}</span></div>
-                        <div>Total Area: <span className="font-semibold text-orange-400">
-              {fires.reduce((sum, fire) => sum + fire.area_hectares, 0).toLocaleString()} ha
-            </span></div>
-                        <div>Avg Intensity: <span className="font-semibold text-yellow-400">
-              {((fires.reduce((sum, fire) => sum + fire.intensity, 0) / fires.length) * 100).toFixed(1)}%
-            </span></div>
-                        <div>High Confidence: <span className="font-semibold text-green-400">
-              {fires.filter(fire => fire.confidence >= 80).length}
-            </span></div>
-                    </div>
-                </div>
-            )}
-
-            {/* Weather info overlay */}
-            {weather && (
-                <div className="absolute top-4 right-4 bg-black bg-opacity-75 text-white p-4 rounded-lg">
-                    <h3 className="text-lg font-bold mb-2">Weather Conditions</h3>
-                    <div className="space-y-1 text-sm">
-                        <div>Temperature: <span className="font-semibold">{weather.current_conditions?.avg_temperature}°C</span></div>
-                        <div>Humidity: <span className="font-semibold">{weather.current_conditions?.avg_humidity}%</span></div>
-                        <div>Wind Speed: <span className="font-semibold">{weather.current_conditions?.avg_wind_speed} km/h</span></div>
-                        {weather.fire_weather?.red_flag_warning && (
-                            <div className="text-red-400 font-bold">🚨 Red Flag Warning</div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Legend */}
-            <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white p-4 rounded-lg">
-                <h4 className="font-bold mb-2">Fire Intensity</h4>
-                <div className="flex items-center space-x-2 text-xs">
-                    <div className="w-4 h-4 rounded-full bg-yellow-400"></div>
-                    <span>Low</span>
-                    <div className="w-4 h-4 rounded-full bg-orange-500"></div>
-                    <span>Medium</span>
-                    <div className="w-4 h-4 rounded-full bg-red-600"></div>
-                    <span>High</span>
-                </div>
-            </div>
-
-            {/* Paradise demo info */}
-            {showParadiseDemo && (
-                <div className="absolute bottom-4 right-4 bg-red-900 bg-opacity-90 text-white p-4 rounded-lg max-w-sm">
-                    <h3 className="text-lg font-bold mb-2">🔥 Paradise Fire Demo</h3>
-                    <div className="text-sm space-y-1">
-                        <div><strong>Date:</strong> November 8, 2018</div>
-                        <div><strong>Origin:</strong> Near Pulga, CA</div>
-                        <div><strong>Quantum Advantage:</strong> 27 min early warning</div>
-                        <div><strong>Lives Saved:</strong> Could have saved 85 lives</div>
-                        <div className="mt-2 p-2 bg-yellow-600 rounded">
-                            <strong>Quantum Detection:</strong> Ember jump detected at 7:35 AM,
-                            Paradise ignition at 8:00 AM
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Loading indicator */}
-            {!isLoaded && (
-                <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                    <div className="text-white text-lg">Loading fire visualization...</div>
-                </div>
-            )}
+      {/* Heatmap Layer */}
+      {showHeatmap && heatmapData.length > 0 && (
+        <div className="absolute inset-0">
+          {heatmapData.map((cell, index) => {
+            const position = coordToPixel(cell.latitude, cell.longitude)
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute"
+                style={{
+                  left: position.x - 15,
+                  top: position.y - 15,
+                  width: 30,
+                  height: 30,
+                  backgroundColor: getRiskColor(cell.riskLevel),
+                  borderRadius: '50%',
+                  filter: 'blur(8px)'
+                }}
+              />
+            )
+          })}
         </div>
-    );
-};
+      )}
 
-export default FireMap;
+      {/* Weather Stations */}
+      {showWeather && weatherStations.map((station, index) => {
+        const position = coordToPixel(station.latitude, station.longitude)
+        return (
+          <motion.div
+            key={`weather-${index}`}
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: index * 0.1 }}
+            className="absolute z-20 group"
+            style={{ left: position.x - 8, top: position.y - 8 }}
+          >
+            <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg" />
+            <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-black/90 text-white text-xs rounded p-2 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
+              <div className="flex items-center gap-1">
+                <Thermometer className="w-3 h-3" />
+                {station.temperature}°C
+              </div>
+              <div className="flex items-center gap-1">
+                <Wind className="w-3 h-3" />
+                {station.windSpeed} mph {station.windDirection}°
+              </div>
+              <div className="flex items-center gap-1">
+                <Droplets className="w-3 h-3" />
+                {station.humidity}%
+              </div>
+            </div>
+          </motion.div>
+        )
+      })}
+
+      {/* Fire Points */}
+      {filteredFires.map((fire, index) => {
+        const position = coordToPixel(fire.latitude, fire.longitude)
+        const size = getFireSize(fire.area, fire.intensity)
+        const color = getFireColor(fire.intensity, fire.temperature)
+        const isSelected = selectedFire?.id === fire.id
+
+        return (
+          <motion.div
+            key={fire.id}
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ 
+              opacity: 1, 
+              scale: 1,
+              boxShadow: fire.type === 'active' ? [
+                `0 0 ${size}px ${color}`,
+                `0 0 ${size * 2}px ${color}40`
+              ] : undefined
+            }}
+            transition={{ delay: index * 0.05 }}
+            className={cn(
+              "absolute z-30 rounded-full cursor-pointer",
+              "transition-all duration-300 hover:scale-110",
+              isSelected && "ring-4 ring-yellow-400"
+            )}
+            style={{
+              left: position.x - size / 2,
+              top: position.y - size / 2,
+              width: size,
+              height: size,
+              backgroundColor: color,
+              border: `2px solid ${fire.confidence > 80 ? '#ffffff' : '#cccccc'}`
+            }}
+            onClick={() => handleFireClick(fire)}
+          >
+            {/* Pulsing animation for active fires */}
+            {fire.type === 'active' && (
+              <motion.div
+                className="absolute inset-0 rounded-full border-2 border-white"
+                animate={{ scale: [1, 1.5, 1], opacity: [1, 0, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+            )}
+            
+            {/* Fire icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Flame className={cn(
+                "text-white drop-shadow-lg",
+                size > 16 ? "w-4 h-4" : "w-2 h-2"
+              )} />
+            </div>
+          </motion.div>
+        )
+      })}
+
+      {/* Ember Prediction Trails */}
+      {showEmberPrediction && filteredFires.map((fire, index) => {
+        if (fire.type !== 'active') return null
+        
+        const startPos = coordToPixel(fire.latitude, fire.longitude)
+        const windEffect = weatherStations[0] // Use first weather station for demo
+        
+        if (!windEffect) return null
+        
+        // Calculate ember trajectory based on wind
+        const emberTrails = Array.from({ length: 5 }, (_, i) => {
+          const angle = (windEffect.windDirection + (i - 2) * 15) * Math.PI / 180
+          const distance = windEffect.windSpeed * 2 // Simplified calculation
+          const endX = startPos.x + Math.cos(angle) * distance
+          const endY = startPos.y - Math.sin(angle) * distance
+          
+          return { startPos, endX, endY, delay: i * 0.2 }
+        })
+
+        return (
+          <g key={`ember-${fire.id}`}>
+            {emberTrails.map((trail, i) => (
+              <motion.line
+                key={i}
+                x1={trail.startPos.x}
+                y1={trail.startPos.y}
+                x2={trail.endX}
+                y2={trail.endY}
+                stroke="#ff6b35"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                initial={{ pathLength: 0, opacity: 0 }}
+                animate={{ pathLength: 1, opacity: 0.7 }}
+                transition={{ duration: 1.5, delay: trail.delay }}
+              />
+            ))}
+          </g>
+        )
+      })}
+
+      {/* Grid Lines */}
+      <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none">
+        <defs>
+          <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#ffffff" strokeWidth="1"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+      </svg>
+
+      {/* Legend */}
+      <div className="absolute bottom-4 left-4 bg-black/90 backdrop-blur rounded-lg p-3 text-white text-sm max-w-xs">
+        <h3 className="font-semibold mb-2">Fire Risk Map</h3>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-red-500 rounded-full" />
+            <span>Active Fires</span>
+          </div>
+          {showHeatmap && (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-gradient-to-r from-green-400 to-red-500 rounded-full" />
+              <span>Risk Levels</span>
+            </div>
+          )}
+          {showWeather && (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-blue-500 rounded-full" />
+              <span>Weather Stations</span>
+            </div>
+          )}
+        </div>
+        <div className="mt-2 text-xs text-gray-400">
+          {filteredFires.length} active fires • Updated {currentTime.toLocaleTimeString()}
+        </div>
+      </div>
+
+      {/* Fire Details Panel */}
+      {selectedFire && (
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="absolute top-4 right-4 bg-black/90 backdrop-blur rounded-lg p-4 text-white max-w-sm"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Flame className="w-4 h-4 text-red-500" />
+              Fire Details
+            </h3>
+            <button 
+              onClick={() => setSelectedFire(null)}
+              className="text-gray-400 hover:text-white"
+            >
+              ×
+            </button>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Intensity:</span>
+              <span className="font-medium">{(selectedFire.intensity * 100).toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Temperature:</span>
+              <span className="font-medium">{selectedFire.temperature}°C</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Area:</span>
+              <span className="font-medium">{selectedFire.area.toFixed(1)} hectares</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Confidence:</span>
+              <span className="font-medium">{selectedFire.confidence}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Source:</span>
+              <span className="font-medium">{selectedFire.source}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Type:</span>
+              <span className={cn(
+                "font-medium capitalize",
+                selectedFire.type === 'active' && "text-red-400",
+                selectedFire.type === 'predicted' && "text-yellow-400",
+                selectedFire.type === 'historical' && "text-gray-400"
+              )}>
+                {selectedFire.type}
+              </span>
+            </div>
+          </div>
+          
+          {selectedFire.type === 'active' && (
+            <div className="mt-3 p-2 bg-red-900/50 rounded border border-red-700">
+              <div className="flex items-center gap-2 text-red-300">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-xs font-medium">ACTIVE FIRE ALERT</span>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Status Indicator */}
+      <div className="absolute top-4 left-4 bg-black/90 rounded-lg p-2 text-white text-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          <span>Real-time</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default FireMap
