@@ -29,7 +29,10 @@ from classiq import (
 from classiq.execution import ExecutionDetails
 from classiq.synthesis import SerializedModel
 
-from config import settings
+from backend.config import get_settings
+
+# Get settings instance  
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 

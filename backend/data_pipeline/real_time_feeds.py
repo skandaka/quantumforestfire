@@ -16,7 +16,10 @@ from collections import defaultdict
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
 
-from config import settings
+from backend.config import get_settings
+
+# Get settings instance
+settings = get_settings()
 from .nasa_firms_collector import NASAFIRMSCollector
 from .noaa_weather_collector import NOAAWeatherCollector
 from .usgs_terrain_collector import USGSTerrainCollector

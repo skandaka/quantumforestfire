@@ -16,7 +16,10 @@ import rasterio
 from rasterio.transform import from_origin
 import json
 
-from config import settings
+from backend.config import get_settings
+
+# Get settings instance
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -659,6 +662,88 @@ class FireDataProcessor:
             'new_fire_detections': new_fires,
             'coverage_area': satellite_data.get('coverage_area', {}),
             'requires_quantum_update': len(new_fires) > 0
+        }
+
+    def _generate_heatmap_data(self, fire_probability_map: np.ndarray, 
+                              location: Dict[str, float], 
+                              radius_km: float,
+                              time_step: int = 0) -> Dict[str, Any]:
+        """
+        Convert 2D fire probability array to GeoJSON FeatureCollection for heatmap visualization
+        
+        Args:
+            fire_probability_map: 2D numpy array of fire probabilities (0.0 to 1.0)
+            location: Dict with 'latitude' and 'longitude' keys for center point
+            radius_km: Radius of the simulation area in kilometers
+            time_step: Time step number for this prediction
+            
+        Returns:
+            GeoJSON FeatureCollection with Point features
+        """
+        if fire_probability_map is None or fire_probability_map.size == 0:
+            return {
+                "type": "FeatureCollection",
+                "features": []
+            }
+        
+        features = []
+        rows, cols = fire_probability_map.shape
+        
+        # Calculate geographic bounds
+        center_lat = location['latitude']
+        center_lon = location['longitude']
+        
+        # Approximate conversion: 1 degree lat ≈ 111 km, 1 degree lon ≈ 111 * cos(lat) km
+        lat_range = radius_km / 111.0
+        lon_range = radius_km / (111.0 * np.cos(np.radians(center_lat)))
+        
+        min_lat = center_lat - lat_range
+        max_lat = center_lat + lat_range
+        min_lon = center_lon - lon_range
+        max_lon = center_lon + lon_range
+        
+        # Generate grid points
+        for i in range(rows):
+            for j in range(cols):
+                probability = float(fire_probability_map[i, j])
+                
+                # Filter out low probability points for performance
+                if probability < 0.05:
+                    continue
+                
+                # Map array indices to geographic coordinates
+                lat = min_lat + (i / rows) * (max_lat - min_lat)
+                lon = min_lon + (j / cols) * (max_lon - min_lon)
+                
+                # Determine risk level
+                if probability >= 0.8:
+                    risk_level = "extreme"
+                elif probability >= 0.6:
+                    risk_level = "high"
+                elif probability >= 0.3:
+                    risk_level = "medium"
+                else:
+                    risk_level = "low"
+                
+                feature = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [lon, lat]
+                    },
+                    "properties": {
+                        "mag": probability,
+                        "time_step": time_step,
+                        "risk_level": risk_level
+                    }
+                }
+                features.append(feature)
+        
+        logger.info(f"Generated heatmap with {len(features)} points from {rows}x{cols} probability grid")
+        
+        return {
+            "type": "FeatureCollection",
+            "features": features
         }
 
     def get_processing_metrics(self) -> Dict[str, Any]:

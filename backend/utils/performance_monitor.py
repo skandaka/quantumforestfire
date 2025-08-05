@@ -15,7 +15,10 @@ import numpy as np
 from prometheus_client import Counter, Histogram, Gauge, Summary
 import aioredis
 
-from config import settings
+from backend.config import get_settings
+
+# Get settings instance
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 

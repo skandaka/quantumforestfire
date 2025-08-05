@@ -5,15 +5,11 @@ import { useFirePredictionStore } from '@/lib/store'
 import toast from 'react-hot-toast'
 
 interface PredictionRequest {
-  location: {
-    latitude: number
-    longitude: number
-  }
-  radius: number
-  timeHorizon: number
-  model: string
-  useQuantumHardware?: boolean
-  includeEmberAnalysis?: boolean
+  latitude: number
+  longitude: number
+  radius_km: number
+  model_type?: string
+  parameters?: Record<string, any>
 }
 
 interface PredictionResponse {
@@ -34,6 +30,21 @@ interface PredictionResponse {
     ember_landing_map?: number[][]
     ignition_risk_map?: number[][]
   }>
+  heatmap_data: {
+    type: 'FeatureCollection'
+    features: Array<{
+      type: 'Feature'
+      geometry: {
+        type: 'Point'
+        coordinates: [number, number]
+      }
+      properties: {
+        mag: number
+        time_step: number
+        risk_level: string
+      }
+    }>
+  }
   metadata: {
     model_type: string
     execution_time: number
@@ -67,12 +78,23 @@ export function useQuantumPrediction() {
   const [metrics, setMetrics] = useState<any>(null)
 
   // Check system status
-  useQuery({
+  const { data: systemStatusData } = useQuery({
     queryKey: ['system-status'],
     queryFn: () => api.getSystemStatus(),
     refetchInterval: 30000,
-    onSuccess: (response) => {
-      const data = response.data;
+  })
+
+  // Get system metrics
+  const { data: metricsData } = useQuery({
+    queryKey: ['system-metrics'],
+    queryFn: () => api.getMetrics(),
+    refetchInterval: 10000,
+  })
+
+  // Update system status based on query results
+  useEffect(() => {
+    if (systemStatusData) {
+      const data = systemStatusData.data;
       if (data.status === 'healthy') {
         setSystemStatus('operational')
       } else if (data.status === 'degraded') {
@@ -80,21 +102,17 @@ export function useQuantumPrediction() {
       } else {
         setSystemStatus('offline')
       }
-    },
-    onError: () => {
+    } else {
       setSystemStatus('offline')
     }
-  })
+  }, [systemStatusData])
 
-  // Get system metrics
-  useQuery({
-    queryKey: ['system-metrics'],
-    queryFn: () => api.getMetrics(),
-    refetchInterval: 10000,
-    onSuccess: (response) => {
-      setMetrics(response.data)
+  // Update metrics based on query results
+  useEffect(() => {
+    if (metricsData) {
+      setMetrics(metricsData.data)
     }
-  })
+  }, [metricsData])
 
   // Run fire prediction
   const runPredictionMutation = useMutation<PredictionResponse, Error, PredictionRequest>({

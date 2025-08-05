@@ -7,26 +7,48 @@ from qiskit_aer import AerSimulator
 
 # --- Corrected Local Imports ---
 from backend.config import Settings
-from backend.quantum_models.classiq_models.classiq_fire_spread import ClassiqFireSpread
-from backend.quantum_models.classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics
+from backend.quantum_models.mock_fire_spread import MockFireSpread
+
+# Try to import Classiq models, but fall back to mock if they fail
+try:
+    from backend.quantum_models.classiq_models.classiq_fire_spread import ClassiqFireSpread
+    from backend.quantum_models.classiq_models.classiq_ember_dynamics import ClassiqEmberDynamics
+    CLASSIQ_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Classiq models not available: {e}. Using mock models for demo.")
+    CLASSIQ_AVAILABLE = False
 
 
 class QuantumSimulatorManager:
     """
     Manages the lifecycle and execution of all quantum models.
-    Delegates complex simulation tasks to specialized Classiq model classes.
+    Delegates complex simulation tasks to specialized model classes.
     """
 
     def __init__(self, settings: Settings):
+        global CLASSIQ_AVAILABLE
         self.settings = settings
         self.qiskit_runtime_service = None
         self.aer_simulator = AerSimulator()
 
-        # Instantiate the complex, stateful model handlers
-        self.models = {
-            "classiq_fire_spread": ClassiqFireSpread(),
-            "classiq_ember_dynamics": ClassiqEmberDynamics(),
-        }
+        # Initialize models with fallback to mock implementations
+        self.models = {}
+        
+        if CLASSIQ_AVAILABLE:
+            try:
+                self.models["classiq_fire_spread"] = ClassiqFireSpread()
+                self.models["classiq_ember_dynamics"] = ClassiqEmberDynamics()
+                logging.info("✅ Classiq models loaded successfully")
+            except Exception as e:
+                logging.warning(f"Failed to initialize Classiq models: {e}. Using mock models.")
+                CLASSIQ_AVAILABLE = False
+        
+        if not CLASSIQ_AVAILABLE:
+            # Use mock models for reliable demo
+            self.models["classiq_fire_spread"] = MockFireSpread(grid_size=20)
+            self.models["classiq_ember_dynamics"] = MockFireSpread(grid_size=15)
+            logging.info("🎭 Using mock models for demo")
+            
         self._initialize_hardware_backends()
         logging.info("QuantumSimulatorManager initialized with available models.")
 

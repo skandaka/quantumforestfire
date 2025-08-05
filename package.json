@@ -1,0 +1,35 @@
+{
+  "name": "quantum-fire-prediction",
+  "version": "1.0.0",
+  "description": "Quantum-powered wildfire prediction system combining advanced quantum computing with real-time environmental data",
+  "main": "index.js",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd frontend && npm run start",
+    "backend": "cd backend && python main.py",
+    "install-frontend": "cd frontend && npm install",
+    "install-backend": "pip install -r requirements.txt",
+    "setup": "npm run install-backend && npm run install-frontend",
+    "lint": "cd frontend && npm run lint"
+  },
+  "keywords": [
+    "quantum-computing",
+    "wildfire-prediction",
+    "machine-learning",
+    "gis",
+    "environmental-monitoring",
+    "classiq",
+    "qiskit"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skandaka/quantumforestfire.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.9.0"
+  }
+}

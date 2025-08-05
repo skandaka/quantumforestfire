@@ -30,6 +30,10 @@ class Settings(BaseSettings):
 
     # Application Settings
     LOG_LEVEL: str = "INFO"
+    
+    # Fire prediction settings
+    prediction_grid_size: int = 20
+    minimum_fire_confidence: float = 0.7
 
 
 @lru_cache()

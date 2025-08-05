@@ -257,7 +257,7 @@ export default function ParadiseFireDemoPage() {
             <MapView
               fireData={currentState?.fire}
               predictionData={showQuantumPrediction ? quantumPrediction : classicalPrediction}
-              center={[39.7596, -121.6219]}
+              center={[-121.6219, 39.7596]}
               zoom={11}
               showEmberPrediction={currentTime >= '07:35'}
             />

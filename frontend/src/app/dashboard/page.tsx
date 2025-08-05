@@ -54,10 +54,13 @@ export default function DashboardPage() {
     setIsRunningPrediction(true)
     try {
       await runPrediction({
-        model: selectedModel,
-        timeHorizon: parseInt(timeHorizon),
-        location: { latitude: 39.7596, longitude: -121.6219 }, // Default to Paradise, CA
-        radius: 50
+        latitude: 39.7596, // Paradise, CA
+        longitude: -121.6219,
+        radius_km: 50,
+        model_type: selectedModel,
+        parameters: {
+          time_horizon: parseInt(timeHorizon)
+        }
       })
       toast.success('Quantum prediction completed successfully')
     } catch (error) {
@@ -249,7 +252,7 @@ export default function DashboardPage() {
             <MapView
               fireData={fireData}
               predictionData={currentPrediction}
-              center={[39.7596, -121.6219]}
+              center={[-121.6219, 39.7596]}
               zoom={10}
             />
           )}
