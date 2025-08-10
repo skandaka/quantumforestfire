@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { ClientTime } from '@/components/ui/ClientTime';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   useFireUpdates, 
@@ -119,7 +120,7 @@ function FireAlert({ alert, onDismiss }: { alert: any; onDismiss: () => void }) 
             <div className="mt-2 text-sm text-red-700">
               <p>Location: {alert.location}</p>
               <p>Confidence: {alert.confidence}%</p>
-              <p>Time: {new Date(alert.timestamp).toLocaleTimeString()}</p>
+              <p>Time: <ClientTime value={alert.timestamp} /></p>
             </div>
           </div>
         </div>
@@ -189,6 +190,7 @@ export default function RealTimeDashboard() {
   const { weatherData } = useWeatherUpdates();
   const { quantumMetrics, processingStatus } = useQuantumUpdates();
   const { systemMetrics, performance } = useSystemMonitoring();
+  const [mounted, setMounted] = useState(false);
   
   const [visibleAlerts, setVisibleAlerts] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -200,17 +202,26 @@ export default function RealTimeDashboard() {
     }
   }, [alerts]);
 
+  useEffect(() => { setMounted(true); }, []);
+
   // Update chart data
   useEffect(() => {
     if (systemMetrics) {
+      const now = Date.now();
       const newPoint = {
-        timestamp: Date.now(),
+        timestamp: now,
         value: systemMetrics.cpu_usage || Math.random() * 100,
-        label: new Date().toLocaleTimeString()
+        // Avoid server/client mismatch: compute label after mount only; place placeholder first render.
+        label: ''
       };
       setChartData(prev => [...prev.slice(-49), newPoint]);
     }
   }, [systemMetrics]);
+
+  // Hydrate time labels on client after initial mount
+  useEffect(() => {
+    setChartData(prev => prev.map(p => ({ ...p, label: p.label || new Date(p.timestamp).toLocaleTimeString() })));
+  }, []);
 
   const dismissAlert = (index: number) => {
     setVisibleAlerts(prev => prev.filter((_, i) => i !== index));
@@ -324,7 +335,7 @@ export default function RealTimeDashboard() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">
-                      {new Date(fire.timestamp || Date.now()).toLocaleTimeString()}
+                      <ClientTime value={fire.timestamp || Date.now()} />
                     </p>
                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                       (fire.severity || 'medium') === 'high' 

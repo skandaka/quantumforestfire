@@ -77,6 +77,49 @@ const workflowSteps = [
   }
 ]
 
+// Sample fallback metrics to showcase page when no live prediction has been run yet
+const sampleQuantumMetrics: any = {
+  synthesis: {
+    provider: 'Classiq',
+    qubit_count: 24,
+    depth: 412,
+    gate_count: 6832,
+    synthesis_time: 1.287,
+  },
+  execution: {
+    provider: 'IonQ (sim)',
+    shots: 4096,
+    execution_time: 2.941,
+    result_confidence: 0.9342,
+  },
+  distribution: {
+    '000000': 0.072,
+    '010101': 0.061,
+    '111000': 0.055,
+    '001111': 0.052,
+    '110011': 0.049,
+    '101010': 0.046,
+    '011110': 0.041,
+    '111111': 0.039,
+    '000111': 0.036,
+    '100100': 0.034,
+  },
+  synthesis_modules: [
+    { name: 'Ignition Kernel', role: 'Initialization of spatial ignition probabilities', impact: 'Defines base probability amplitude distribution.' },
+    { name: 'Wind Coupling', role: 'Applies anisotropic phase shifts', impact: 'Biases spread direction according to wind vectors.' },
+    { name: 'Fuel Superposition', role: 'Encodes heterogeneous fuel moisture / load', impact: 'Refines transition amplitudes cell-by-cell.' },
+    { name: 'Adaptive Entangler', role: 'Generates correlation lattice', impact: 'Captures multi-cell co-burning dynamics.' },
+    { name: 'Noise Mitigation Layer', role: 'Lightweight error suppression transforms', impact: 'Stabilizes high-depth segments.' },
+  ],
+  hardware_abstraction: [
+    { layer: 'High-Level Model', detail: 'Pythonic fire spread functional specification (no gates).', icon: <FileCode className="h-5 w-5 text-cyan-400" /> },
+    { layer: 'Classiq Synthesis', detail: 'Constraint-driven circuit generation & resource optimization.', icon: <BrainCircuit className="h-5 w-5 text-purple-400" /> },
+    { layer: 'Intermediate Quantum IR', detail: 'Architecture-aware layout, depth balancing & gate fusion.', icon: <Layers className="h-5 w-5 text-indigo-400" /> },
+    { layer: 'Provider Backend', detail: 'Target-specific transpilation (basis gates, scheduling).', icon: <Cpu className="h-5 w-5 text-pink-400" /> },
+    { layer: 'Execution & Readout', detail: 'Shot execution, measurement aggregation, classical post-process.', icon: <Database className="h-5 w-5 text-emerald-400" /> },
+  ]
+}
+
 /**
  * A dedicated page to showcase the quantum technology, powered by Classiq,
  * that drives the fire prediction engine.
@@ -85,22 +128,24 @@ export default function ClassiqPage() {
   // --- HOOKS ---
   const { currentPrediction } = useQuantumPrediction()
   const quantumMetrics = currentPrediction?.quantumMetrics
+  const [useSample, setUseSample] = React.useState(false)
+  const effectiveMetrics: any = quantumMetrics || (useSample ? sampleQuantumMetrics : null)
 
   // --- DERIVED DATA & MEMOIZATION ---
   const distributionData = React.useMemo(() => {
-    if (!quantumMetrics?.distribution) return []
-    return Object.entries(quantumMetrics.distribution)
-        .map(([name, probability]) => ({
-          name: name.length > 8 ? `...${name.slice(-6)}` : name, // Truncate long state names
-          probability,
-        }))
-        .sort((a, b) => b.probability - a.probability)
-        .slice(0, 8) // Show top 8 states
-  }, [quantumMetrics])
+    if (!effectiveMetrics?.distribution) return [] as { name: string; probability: number }[]
+    return (Object.entries(effectiveMetrics.distribution) as [string, number][])
+      .map(([name, probability]) => ({
+        name: name.length > 8 ? `...${name.slice(-6)}` : name,
+        probability: Number(probability),
+      }))
+      .sort((a, b) => b.probability - a.probability)
+      .slice(0, 8)
+  }, [effectiveMetrics])
 
   const radarChartData = React.useMemo(() => {
-    if (!quantumMetrics?.synthesis) return []
-    const { qubit_count, depth, gate_count } = quantumMetrics.synthesis
+    if (!effectiveMetrics?.synthesis) return []
+    const { qubit_count, depth, gate_count } = effectiveMetrics.synthesis
     // Normalize data for radar chart visualization
     const maxQubits = 64
     const maxDepth = 1000
@@ -119,12 +164,12 @@ export default function ClassiqPage() {
         fullMark: 100,
       },
     ]
-  }, [quantumMetrics])
+  }, [effectiveMetrics])
 
   // --- RENDER HELPER COMPONENTS ---
 
   const renderMetricsPanel = () => {
-    if (!quantumMetrics) {
+    if (!effectiveMetrics) {
       return (
           <div className="text-center py-10 bg-gray-800/30 rounded-lg">
             <h3 className="text-lg font-semibold text-gray-300">
@@ -138,11 +183,16 @@ export default function ClassiqPage() {
                 Go to Dashboard
               </Button>
             </Link>
+            <div className="mt-6">
+              <Button variant="outline" size="sm" onClick={() => setUseSample(true)}>
+                Load Sample Quantum Run
+              </Button>
+            </div>
           </div>
       )
     }
 
-    const { synthesis, execution } = quantumMetrics
+    const { synthesis, execution } = effectiveMetrics
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Synthesis Metrics */}
@@ -345,6 +395,9 @@ export default function ClassiqPage() {
               Live Prediction Analysis
             </h2>
             {renderMetricsPanel()}
+              {useSample && !quantumMetrics && (
+                <p className="mt-4 text-center text-xs text-gray-500">Showing sample synthesized metrics. Run a real prediction to replace this.</p>
+              )}
           </motion.div>
 
           {/* Visualization Section */}
@@ -411,6 +464,43 @@ export default function ClassiqPage() {
               </div>
             </div>
           </div>
+
+          {/* Algorithm Modules Section */}
+          {effectiveMetrics && (
+            <div className="mt-24 mb-16">
+              <h2 className="text-3xl font-bold mb-10 text-center">Circuit Module Composition</h2>
+              <div className="grid md:grid-cols-3 gap-6">
+                {effectiveMetrics.synthesis_modules?.map((m: any) => (
+                  <div key={m.name} className="bg-gray-900/50 p-5 rounded-lg border border-gray-800/70 flex flex-col">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="h-4 w-4 text-amber-400" />
+                      <h3 className="font-semibold text-sm tracking-wide uppercase">{m.name}</h3>
+                    </div>
+                    <p className="text-gray-400 text-xs mb-2">{m.role}</p>
+                    <p className="text-emerald-300 text-xs font-mono">{m.impact}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Hardware Abstraction Layer Section */}
+          {effectiveMetrics && (
+            <div className="mt-20 mb-10">
+              <h2 className="text-3xl font-bold mb-10 text-center">Hardware Abstraction Layers</h2>
+              <div className="space-y-4 max-w-4xl mx-auto">
+                {effectiveMetrics.hardware_abstraction?.map((h: any, idx: number) => (
+                  <div key={idx} className="flex items-start gap-4 bg-gray-900/40 p-4 rounded-lg border border-gray-800/60">
+                    <div className="mt-1">{h.icon}</div>
+                    <div>
+                      <h4 className="font-semibold text-sm tracking-wide text-gray-200">{h.layer}</h4>
+                      <p className="text-gray-400 text-xs leading-relaxed">{h.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
         </div>
       </div>

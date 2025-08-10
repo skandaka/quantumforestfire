@@ -140,6 +140,52 @@ export default function ParadiseFireDemoPage() {
         }
     }, [simulationData])
 
+    // Derive a faux probability grid if backend does not provide one so heatmap always shows.
+    const simulationDataWithProbability = useMemo(() => {
+        if (!simulationData) return simulationData
+        if ((simulationData as any).predictions?.[0]?.fire_probability_map) return simulationData
+        const fires = simulationData.fire_locations
+        if (!fires?.length) return simulationData
+        // Create a small grid around centroid
+        const avgLat = fires.reduce((s, f) => s + f.latitude, 0) / fires.length
+        const avgLon = fires.reduce((s, f) => s + f.longitude, 0) / fires.length
+        const gridSize = 20
+        const span = 0.25 // degrees window
+        const map: number[][] = []
+        for (let i = 0; i < gridSize; i++) {
+            const row: number[] = []
+            for (let j = 0; j < gridSize; j++) {
+                // coordinate of cell center
+                const lat = avgLat - span / 2 + (i + 0.5) * (span / gridSize)
+                const lon = avgLon - span / 2 + (j + 0.5) * (span / gridSize)
+                // influence from all fires (gaussian falloff)
+                let prob = 0
+                fires.forEach(f => {
+                    const dLat = (lat - f.latitude)
+                    const dLon = (lon - f.longitude)
+                    const dist2 = dLat * dLat + dLon * dLon
+                    const brightnessFactor = (f.brightness || 300) / 500
+                    prob += Math.exp(-dist2 / 0.002) * brightnessFactor
+                })
+                row.push(Math.min(1, prob))
+            }
+            map.push(row)
+        }
+        const augmented = {
+            ...simulationData,
+            predictions: [
+                {
+                    fire_probability_map: map,
+                    max_fire_prob: Math.max(...map.flat()),
+                    estimated_area_sqkm: (map.flat().filter(v => v > 0.2).length * (span * 111) * (span * 111) / (gridSize * gridSize)),
+                    risk_level: map.flat().some(v => v > 0.7) ? 'High' : 'Moderate'
+                }
+            ],
+            request: { location: { latitude: avgLat, longitude: avgLon } }
+        }
+        return augmented as any
+    }, [simulationData])
+
 
     // --- RENDER HELPER COMPONENTS ---
 
@@ -271,7 +317,7 @@ export default function ParadiseFireDemoPage() {
 
             <main className="flex-1 h-full w-full">
                 <MapView
-                    predictionData={simulationData}
+                    predictionData={simulationDataWithProbability as any}
                     realtimeData={mapData}
                     center={[-121.6175, 39.7391]}
                     zoom={9.5}

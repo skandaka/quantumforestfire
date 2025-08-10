@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { apiJson } from '@/lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Activity, 
@@ -278,13 +279,12 @@ export function EnhancedFireMap({ className }: EnhancedFireMapProps) {
   const fetchEnhancedData = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/data/enhanced')
-      if (response.ok) {
-        const enhancedData = await response.json()
+      try {
+        const enhancedData = await apiJson('data/enhanced')
         setData(enhancedData)
         setLastUpdated(new Date())
-      } else {
-        console.error('Failed to fetch enhanced data')
+      } catch (err) {
+        console.error('Failed to fetch enhanced data', err)
       }
     } catch (error) {
       console.error('Error fetching enhanced data:', error)
@@ -377,8 +377,8 @@ export function EnhancedFireMap({ className }: EnhancedFireMapProps) {
       {lastUpdated && (
         <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">
-              Last updated: {lastUpdated.toLocaleTimeString()}
+            <span className="text-gray-400" suppressHydrationWarning>
+              Last updated: {typeof window === 'undefined' ? '' : lastUpdated.toLocaleTimeString()}
             </span>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>

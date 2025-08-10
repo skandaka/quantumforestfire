@@ -42,15 +42,42 @@ function Header() {
   const { systemStatus } = useQuantumPrediction()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
+  const [isHoverZone, setIsHoverZone] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const [lastScrollY, setLastScrollY] = useState(0)
 
-  // Effect to handle scroll position for header styling
+  // Scroll + hover logic for auto-hide
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10)
+      const y = window.scrollY
+      setIsScrolled(y > 10)
+      if (y < 10) {
+        setVisible(true)
+      } else {
+        if (y > lastScrollY + 20 && !isHoverZone && !mobileMenuOpen) {
+          setVisible(false)
+        } else if (y < lastScrollY - 20) {
+          setVisible(true)
+        }
+      }
+      setLastScrollY(y)
+    }
+    const handlePointer = (e: PointerEvent) => {
+      if (e.clientY < 80) {
+        setIsHoverZone(true)
+        setVisible(true)
+      } else {
+        setIsHoverZone(false)
+        if (window.scrollY > 120 && !mobileMenuOpen) setVisible(false)
+      }
     }
     window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    window.addEventListener('pointermove', handlePointer, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('pointermove', handlePointer)
+    }
+  }, [lastScrollY, isHoverZone, mobileMenuOpen])
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -62,14 +89,15 @@ function Header() {
   const isHomePage = pathname === '/'
 
   return (
-      <header
-          className={cn(
-              'fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out',
-              isScrolled || !isHomePage
-                  ? 'bg-black/80 backdrop-blur-lg border-b border-gray-800'
-                  : 'bg-transparent border-b border-transparent'
-          )}
-      >
+    <header
+      className={cn(
+        'fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out',
+        isScrolled || !isHomePage
+          ? 'bg-black/70 backdrop-blur-xl border-b border-gray-800/60 shadow-lg shadow-black/40'
+          : 'bg-gradient-to-b from-black/60 to-transparent border-b border-transparent',
+        visible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+      )}
+    >
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="relative flex items-center justify-between h-20">
             {/* Logo */}
@@ -278,8 +306,8 @@ export default function RootLayout({
       {/* The Header is rendered on every page */}
       <Header />
 
-      {/* The children prop represents the content of the current page */}
-      <main>{children}</main>
+  {/* Offset main content so fixed header (h-20) doesn't overlap */}
+  <main className="pt-24">{children}</main>
       </body>
       </html>
   )

@@ -102,8 +102,8 @@ function LiveDataFeed({ data }: { data: StreamingData[] }) {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-start gap-3 p-2 bg-gray-900 rounded border border-gray-600"
           >
-            <div className="text-gray-400 text-xs w-16 flex-shrink-0">
-              {new Date(item.timestamp).toLocaleTimeString()}
+            <div className="text-gray-400 text-xs w-16 flex-shrink-0" suppressHydrationWarning>
+              {typeof window === 'undefined' ? '' : new Date(item.timestamp).toLocaleTimeString()}
             </div>
             <div className="flex-1">
               {item.fire_updates.length > 0 && (

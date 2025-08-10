@@ -1,21 +1,28 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { ClientTime } from '@/components/ui/ClientTime';
+interface DeviceRecord { device_id: string; device_name: string; device_type: string; status: string; battery_level?: number; sensors: string[]; last_seen: string; network_info?: { connection_type?: string; signal_strength?: number; ip_address?: string } }
+interface AlertRecord { alert_id: string; alert_level: string; message: string; device_id: string; timestamp: string }
+interface EdgeNode { node_id: string; status: string; processing_capacity: number; connected_devices: number }
+interface SummaryRecord { active_devices?: number; total_devices?: number; recent_readings_count?: number; recent_alerts?: number }
 import { motion } from 'framer-motion';
 
 // IoT Dashboard Component
 export default function IoTDashboard() {
-  const [devices, setDevices] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [sensorData, setSensorData] = useState([]);
-  const [edgeNodes, setEdgeNodes] = useState([]);
-  const [summary, setSummary] = useState(null);
+  const [devices, setDevices] = useState<DeviceRecord[]>([]);
+  const [alerts, setAlerts] = useState<AlertRecord[]>([]);
+  const [sensorData, setSensorData] = useState<any[]>([]);
+  const [edgeNodes, setEdgeNodes] = useState<EdgeNode[]>([]);
+  const [summary, setSummary] = useState<SummaryRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [selectedDevice, setSelectedDevice] = useState<DeviceRecord | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     loadIoTData();
     const interval = setInterval(loadIoTData, 30000); // Refresh every 30 seconds
+    setMounted(true);
     return () => clearInterval(interval);
   }, []);
 
@@ -262,7 +269,7 @@ export default function IoTDashboard() {
                       ))}
                     </div>
                     <div className="mt-2 text-sm text-gray-600">
-                      Last seen: {new Date(device.last_seen).toLocaleString()}
+                      Last seen: <ClientTime value={device.last_seen} mode="datetime" />
                     </div>
                   </motion.div>
                 ))}
@@ -288,7 +295,7 @@ export default function IoTDashboard() {
                       <div className="flex-1">
                         <p className="font-medium text-sm">{alert.message}</p>
                         <p className="text-xs mt-1 opacity-75">
-                          Device: {alert.device_id} | {new Date(alert.timestamp).toLocaleTimeString()}
+                          Device: {alert.device_id} | <ClientTime value={alert.timestamp} />
                         </p>
                       </div>
                       <span className="ml-2 text-xs font-medium">
@@ -387,7 +394,7 @@ export default function IoTDashboard() {
                     <p><span className="text-gray-600">Connection:</span> {selectedDevice.network_info?.connection_type}</p>
                     <p><span className="text-gray-600">Signal:</span> {selectedDevice.network_info?.signal_strength} dBm</p>
                     <p><span className="text-gray-600">IP:</span> {selectedDevice.network_info?.ip_address}</p>
-                    <p><span className="text-gray-600">Last seen:</span> {new Date(selectedDevice.last_seen).toLocaleString()}</p>
+                    <p><span className="text-gray-600">Last seen:</span> <ClientTime value={selectedDevice.last_seen} mode="datetime" /></p>
                   </div>
                 </div>
               </div>

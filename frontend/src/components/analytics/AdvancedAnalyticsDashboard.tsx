@@ -1,15 +1,50 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+
+// Lightweight type definitions to satisfy TS without enforcing strict backend schema
+interface TrendsSummary {
+  total_events?: number;
+  trend_direction?: string;
+  [key: string]: any;
+}
+interface RiskPrediction {
+  risk_level: string;
+  probability: number;
+  risk_score: number;
+  time_window_hours: number;
+  contributing_factors: string[];
+  [key: string]: any;
+}
+interface FirePatternsSummary {
+  total_clusters?: number;
+  cluster_details?: Record<string, any>;
+  [key: string]: any;
+}
+interface RiskMapSummary {
+  grid_dimensions?: { rows: number; cols: number };
+  max_risk?: number;
+  avg_risk?: number;
+  resolution?: number;
+  bounds?: { min_lat: number; max_lat: number; min_lon: number; max_lon: number };
+  generated_at?: string;
+  [key: string]: any;
+}
+interface AnomalyRecord {
+  description?: string;
+  anomaly_score?: number;
+  severity?: string;
+  [key: string]: any;
+}
 import { motion } from 'framer-motion';
 
 // Advanced Analytics Dashboard Component
 export default function AdvancedAnalyticsDashboard() {
-  const [trends, setTrends] = useState(null);
-  const [riskPredictions, setRiskPredictions] = useState([]);
-  const [anomalies, setAnomalies] = useState([]);
-  const [firePatterns, setFirePatterns] = useState(null);
-  const [riskMap, setRiskMap] = useState(null);
+  const [trends, setTrends] = useState<TrendsSummary | null>(null);
+  const [riskPredictions, setRiskPredictions] = useState<RiskPrediction[]>([]);
+  const [anomalies, setAnomalies] = useState<AnomalyRecord[]>([]);
+  const [firePatterns, setFirePatterns] = useState<FirePatternsSummary | null>(null);
+  const [riskMap, setRiskMap] = useState<RiskMapSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -345,10 +380,10 @@ export default function AdvancedAnalyticsDashboard() {
                     Grid Size: {riskMap.grid_dimensions?.rows} × {riskMap.grid_dimensions?.cols}
                   </p>
                   <p className="text-gray-600">
-                    Max Risk: {(riskMap.max_risk * 100)?.toFixed(1)}%
+                    Max Risk: {riskMap.max_risk !== undefined ? (riskMap.max_risk * 100).toFixed(1) : '—'}%
                   </p>
                   <p className="text-gray-600">
-                    Avg Risk: {(riskMap.avg_risk * 100)?.toFixed(1)}%
+                    Avg Risk: {riskMap.avg_risk !== undefined ? (riskMap.avg_risk * 100).toFixed(1) : '—'}%
                   </p>
                   <p className="text-gray-600">
                     Resolution: {riskMap.resolution}°
@@ -365,7 +400,7 @@ export default function AdvancedAnalyticsDashboard() {
                     Lon: {riskMap.bounds?.min_lon?.toFixed(2)}° to {riskMap.bounds?.max_lon?.toFixed(2)}°
                   </p>
                   <p className="text-gray-600">
-                    Generated: {new Date(riskMap.generated_at).toLocaleString()}
+                    Generated: {riskMap.generated_at ? new Date(riskMap.generated_at).toLocaleString() : '—'}
                   </p>
                 </div>
               </div>

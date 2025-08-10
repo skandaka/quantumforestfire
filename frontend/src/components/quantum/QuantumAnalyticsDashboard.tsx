@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
+import { apiJson } from '@/lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Atom, 
@@ -427,11 +428,10 @@ export function QuantumAnalyticsDashboard({ className }: QuantumAnalyticsDashboa
   const fetchQuantumAnalytics = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/data/quantum-features')
-      if (response.ok) {
-        const quantumData = await response.json()
+      try {
+        const quantumData = await apiJson('data/quantum-features')
         setData(quantumData)
-      } else {
+      } catch (_) {
         // Fallback to mock data
         setData({
           metrics: {

@@ -153,8 +153,8 @@ export default function SimpleMapView({
                 {(fire.center_lat || fire.latitude)?.toFixed(4)}°, {(fire.center_lon || fire.longitude)?.toFixed(4)}°
               </div>
               {fire.detection_time && (
-                <div className="text-gray-400 text-xs">
-                  {new Date(fire.detection_time).toLocaleTimeString()}
+                <div className="text-gray-400 text-xs" suppressHydrationWarning>
+                  {typeof window === 'undefined' ? '' : new Date(fire.detection_time).toLocaleTimeString()}
                 </div>
               )}
             </div>

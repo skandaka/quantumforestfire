@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react'
+import { ClientTime } from '@/components/ui/ClientTime'
 import { motion } from 'framer-motion'
 import {
   LineChart,
@@ -289,7 +290,7 @@ export function MetricCard({
                 </span>
             <span>vs prev. period</span>
           </div>
-          <p>Last updated: {new Date().toLocaleTimeString()}</p>
+          <p>Last updated: <ClientTime value={Date.now()} /></p>
         </div>
       </motion.div>
   )

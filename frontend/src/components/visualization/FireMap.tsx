@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useMemo } from 'react'
+import { ClientTime } from '@/components/ui/ClientTime'
 import { motion } from 'framer-motion'
 import { Flame, Wind, Thermometer, Droplets, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -371,8 +372,8 @@ export function FireMap({
             </div>
           )}
         </div>
-        <div className="mt-2 text-xs text-gray-400">
-          {filteredFires.length} active fires • Updated {currentTime.toLocaleTimeString()}
+        <div className="mt-2 text-xs text-gray-400" suppressHydrationWarning>
+          {filteredFires.length} active fires • Updated <ClientTime value={currentTime} />
         </div>
       </div>
 

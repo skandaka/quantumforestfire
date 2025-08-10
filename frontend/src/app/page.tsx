@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import { ClientTime } from '@/components/ui/ClientTime'
 import { motion } from 'framer-motion'
 import { Flame, AlertTriangle, Activity, Cpu, Play, MapPin } from 'lucide-react'
 import Link from 'next/link'
@@ -55,6 +56,8 @@ export default function HomePage() {
     windSpeed: weatherData?.current_conditions?.avg_wind_speed || 0,
     alertCount: activeAlerts.length
   }
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
   return (
       <div className="min-h-screen bg-black text-white">
         <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -82,7 +85,7 @@ export default function HomePage() {
                           <div key={alert.id} className="flex items-start gap-3 p-2 bg-black/30 rounded">
                             <div className={`w-2 h-2 rounded-full mt-2 ${ alert.severity === 'critical' ? 'bg-red-500' : alert.severity === 'high' ? 'bg-orange-500' : 'bg-yellow-500' }`} />
                             <div className="flex-1"><div className="text-sm font-medium">{alert.title}</div><div className="text-xs text-gray-400">{alert.message}</div>{alert.location?.name && ( <div className="text-xs text-blue-400">{alert.location.name}</div> )}</div>
-                            <div className="text-xs text-gray-500">{new Date(alert.timestamp).toLocaleTimeString()}</div>
+                            <div className="text-xs text-gray-500"><ClientTime value={alert.timestamp} /></div>
                           </div>
                       ))}
                     </div>
