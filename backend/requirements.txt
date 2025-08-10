@@ -8,7 +8,9 @@ numpy
 aiohttp
 pandas
 requests
-classiq
+# classiq package currently failing on public index for Python >=3.12 / nonexistent wheel.
+# If you have access via a private index, replace below line with the appropriate source URL.
+# classiq
 qiskit
 matplotlib
 scipy
