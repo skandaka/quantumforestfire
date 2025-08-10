@@ -13,8 +13,13 @@ const nextConfig = {
     return config
   },
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
-    NEXT_PUBLIC_MAPBOX_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  // Legacy variable (kept for compatibility)
+  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  // Preferred explicit backend base URL (do NOT append trailing slash)
+  NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL,
+  // Optional WebSocket URL override (wss://...) else frontend can compose it
+  NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
+  NEXT_PUBLIC_MAPBOX_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   },
 }
 
